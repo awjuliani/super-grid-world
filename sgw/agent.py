@@ -7,6 +7,8 @@ class Agent:
         self.orientation = direction  # Current rotation (0-3)
         self.looking = direction  # Direction agent is looking
         self.keys = 0
+        self.reward = 0
+        self.done = False
         self.direction_map = np.array(
             [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
         )
@@ -86,3 +88,7 @@ class Agent:
     def teleport(self, new_pos):
         """Teleport agent to new position."""
         self.pos = list(map(int, new_pos))
+
+    def collect_reward(self, reward):
+        """Collect a reward."""
+        self.reward += reward

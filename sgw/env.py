@@ -178,7 +178,6 @@ class SuperGridWorld(Env):
         agent_pos: list = None,
         episode_length: int = 100,
         random_start: bool = False,
-        terminate_on_reward: bool = True,
         time_penalty: float = 0.0,
         stochasticity: float = 0.0,
         visible_walls: bool = True,
@@ -189,7 +188,6 @@ class SuperGridWorld(Env):
         # Reset basic state variables
         self._reset_state(
             episode_length,
-            terminate_on_reward,
             time_penalty,
             stochasticity,
             visible_walls,
@@ -206,17 +204,14 @@ class SuperGridWorld(Env):
     def _reset_state(
         self,
         episode_length,
-        terminate_on_reward,
         time_penalty,
         stochasticity,
         visible_walls,
     ):
         """Helper method to reset all state variables."""
-        self.done = False
         self.episode_time = 0
         self.time_penalty = time_penalty
         self.max_episode_time = episode_length
-        self.terminate_on_reward = terminate_on_reward
         self.stochasticity = stochasticity
         self.visible_walls = visible_walls
         self.cached_objects = None
@@ -281,24 +276,17 @@ class SuperGridWorld(Env):
         # Convert numpy array to list for comparison
         target = list(map(int, target))
 
-        # Check walls
-        if any(wall == target for wall in self.objects["walls"]):
-            return False
-
-        # Check doors
-        door = next((door for door in self.objects["doors"] if door == target), None)
-        if door:
-            if self.agent.keys > 0:
-                self.objects["doors"].remove(door)
-                self.agent.use_key()
-            else:
+        # Check all objects for blocking movement
+        for obj_type in self.objects.values():
+            obj = next((o for o in obj_type if o == target), None)
+            if obj and obj.block_movement:
                 return False
 
         return True
 
     def step(self, action: int):
         """Steps the environment forward given an action."""
-        if self.done:
+        if self.agent.done:
             print("Episode finished. Please reset the environment.")
             return None, None, None, None
 
@@ -309,13 +297,13 @@ class SuperGridWorld(Env):
         # Process action and determine if collection is allowed
         self._move_agent(action)
 
-        # Process object interactions and determine reward
-        reward = self._object_interactions(action)
+        # Process object interactions
+        self._object_interactions(action)
 
         # Update time
         self.episode_time += 1
 
-        return self.observation, reward, self.done, {}
+        return self.observation, self.agent.reward, self.agent.done, {}
 
     def _determine_can_collect(self, action: int) -> bool:
         """Determines if collection is allowed based on action and manual_collect setting."""
@@ -335,34 +323,19 @@ class SuperGridWorld(Env):
             self.agent.move(direction)
 
     def _object_interactions(self, action: int):
-        """Process special tiles like keys, warps, and other objects."""
+        """Process interactions with objects at the agent's position."""
         agent_pos = self.agent.get_position()
+        self.agent.reward = self.time_penalty
 
-        # Find reward at agent position
-        reward = self.time_penalty
-        reward_obj = next((r for r in self.objects["rewards"] if r == agent_pos), None)
-        if reward_obj and self._determine_can_collect(action):
-            self.done = self.terminate_on_reward
-            reward += reward_obj.value
-            self.objects["rewards"].remove(reward_obj)
-
-        # Process other objects
-        other_obj = next((o for o in self.objects["other"] if o == agent_pos), None)
-        if other_obj:
-            self.objects["other"].remove(other_obj)
-
-        # Process keys
-        key_obj = next((k for k in self.objects["keys"] if k == agent_pos), None)
-        if key_obj:
-            self.agent.collect_key()
-            self.objects["keys"].remove(key_obj)
-
-        # Process warps
-        warp_obj = next((w for w in self.objects["warps"] if w == agent_pos), None)
-        if warp_obj:
-            self.agent.teleport(warp_obj.target)
-
-        return reward
+        # Check all object types for interactions
+        for obj_type in self.objects.values():
+            obj = next((o for o in obj_type if o == agent_pos), None)
+            if obj and self._determine_can_collect(action):
+                # Interact with the object
+                obj.interact(self.agent)
+                # Remove object if specified
+                if obj.remove_on_interact:
+                    obj_type.remove(obj)
 
     def close(self) -> None:
         self.renderer.close()

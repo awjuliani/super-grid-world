@@ -116,11 +116,10 @@ class Grid2DRenderer(RendererInterface):
         self,
         img: np.ndarray,
         rewards: List[Reward],
-        terminate_on_reward: bool,
     ) -> None:
         for reward in rewards:
             draw, factor, reward_value = self._process_reward(
-                reward.value, terminate_on_reward
+                reward.value, reward.terminate_on_interact
             )
             if draw:
                 self._draw_reward(img, reward.pos, factor, reward_value)
@@ -264,7 +263,7 @@ class Grid2DRenderer(RendererInterface):
 
     def _create_new_frame(self, env: Any) -> np.ndarray:
         img = self.make_base_image(env.objects, env.visible_walls)
-        self.render_rewards(img, env.objects["rewards"], env.terminate_on_reward)
+        self.render_rewards(img, env.objects["rewards"])
         self.render_markers(img, env.objects["markers"])
         self.render_keys(img, env.objects["keys"])
         self.render_doors(img, env.objects["doors"])
