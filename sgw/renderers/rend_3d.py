@@ -3,15 +3,16 @@ import numpy as np
 import os
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from sgw.renderers.gl_utils import (
+from sgw.utils.gl_utils import (
     load_texture,
     render_plane,
     render_cube,
     render_sphere,
 )
+from sgw.renderers.rend_interface import RendererInterface
 
 
-class Grid3DRenderer:
+class Grid3DRenderer(RendererInterface):
     def __init__(self, resolution=128):
         self.resolution = resolution
         self.last_objects = None
@@ -139,6 +140,10 @@ class Grid3DRenderer:
             self.height, self.width, 3
         )
         return np.flip(image, axis=0)  # Only flip vertically
+
+    def render(self, env, **kwargs):
+        # Implement the common interface render method
+        return self.render_frame(env)
 
     def close(self):
         glfw.make_context_current(self.window)  # Make context current

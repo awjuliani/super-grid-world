@@ -2,9 +2,10 @@ import numpy as np
 import cv2 as cv
 import matplotlib.pyplot as plt
 from typing import Tuple, List, Dict, Any
+from sgw.renderers.rend_interface import RendererInterface
 
 
-class Grid2DRenderer:
+class Grid2DRenderer(RendererInterface):
     # Color constants
     BACKGROUND_COLOR = (235, 235, 235)
     GRID_LINE_COLOR = (210, 210, 210)
@@ -226,13 +227,11 @@ class Grid2DRenderer:
         return img
 
     def _should_update_cache(self, env: Any) -> bool:
-        # Deep copy comparison for objects to catch changes in nested structures
         objects_changed = self.cached_objects != env.objects
         visible_walls_changed = self.cached_visible_walls != env.visible_walls
         return objects_changed or visible_walls_changed or self.cached_image is None
 
     def _update_cache(self, env: Any) -> None:
-        # Create a deep copy to ensure nested structures are properly cached
         self.cached_objects = {
             key: value.copy() if hasattr(value, "copy") else value
             for key, value in env.objects.items()
@@ -267,7 +266,9 @@ class Grid2DRenderer:
         ]
         return window
 
-    def render(self, env: Any, mode: str = "human") -> np.ndarray:
+    def render(self, env: Any, **kwargs) -> np.ndarray:
+        # Common interface render method. If mode='human', display using matplotlib.
+        mode = kwargs.get("mode", None)
         img = self.render_frame(env)
         if mode == "human":
             plt.imshow(img)
@@ -277,27 +278,22 @@ class Grid2DRenderer:
 
     def render_other(self, img: np.ndarray, others: Dict[Tuple[int, int], str]) -> None:
         for pos, name in others.items():
-            # Get the center of the grid cell
             center = (
                 pos[1] * self.block_size + self.block_size // 2,
                 pos[0] * self.block_size + self.block_size // 2,
             )
 
-            # Get the first letter of the object name
             letter = name[0].upper()
 
-            # Set text parameters
             font = cv.FONT_HERSHEY_SIMPLEX
             font_scale = 0.75
             thickness = 2
 
-            # Get text size to center it
             (text_width, text_height), _ = cv.getTextSize(
                 letter, font, font_scale, thickness
             )
             text_pos = (center[0] - text_width // 2, center[1] + text_height // 2)
 
-            # Draw the letter
             cv.putText(
                 img, letter, text_pos, font, font_scale, self.AGENT_COLOR, thickness
             )

@@ -25,5 +25,5 @@ setup(
     packages=find_packages(),
     install_requires=required,
     include_package_data=True,
-    package_data={"sgw": ["textures/*.png"]},
+    package_data={"sgw": ["renderers/textures/*.png"]},
 )

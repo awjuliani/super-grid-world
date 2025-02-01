@@ -1,7 +1,8 @@
 import numpy as np
+from sgw.renderers.rend_interface import RendererInterface
 
 
-class GridLangRenderer:
+class GridLangRenderer(RendererInterface):
     def __init__(self, grid_size: int):
         self.grid_size = grid_size
         self.reward_types = {True: "gem", False: "lava"}
@@ -203,4 +204,18 @@ class GridLangRenderer:
             f"{base_description}\nThere are no objects or walls near you."
             if not all_descriptions
             else f"{base_description}\n\n" + "\n".join(all_descriptions)
+        )
+
+    def render(self, env, **kwargs):
+        # Render method for language observation.
+        first_person = kwargs.get("first_person", True)
+        vision_range = kwargs.get(
+            "vision_range", env.vision_range if hasattr(env, "vision_range") else None
+        )
+        return self.make_language_obs(
+            env.agent_pos,
+            env.objects,
+            env.keys,
+            first_person=first_person,
+            vision_range=vision_range,
         )
