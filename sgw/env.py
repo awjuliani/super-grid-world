@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict
 from gym import Env, spaces
 import numpy as np
 import random
@@ -336,18 +336,14 @@ class SuperGridWorld(Env):
 
     def _calculate_reward(self, action: int) -> float:
         """Calculate reward based on action and current state."""
-        reward = self.time_penalty if action != 4 else 0
+        reward = self.time_penalty
         agent_pos = self.agent.get_position()
 
         # Find reward at agent position
         reward_obj = next((r for r in self.objects["rewards"] if r == agent_pos), None)
         if reward_obj and self._determine_can_collect(action):
-            if isinstance(reward_obj.value, list):
-                self.done = reward_obj.value[2]
-                reward += reward_obj.value[0]
-            else:
-                self.done = self.terminate_on_reward
-                reward += reward_obj.value
+            self.done = self.terminate_on_reward
+            reward += reward_obj.value
             self.objects["rewards"].remove(reward_obj)
 
         return reward
