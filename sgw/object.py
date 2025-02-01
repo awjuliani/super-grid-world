@@ -2,14 +2,15 @@ class Object:
     def __init__(
         self,
         pos,
-        block_movement=True,
-        remove_on_interact=False,
-        terminate_on_interact=False,
+        obstacle=True,
+        consumable=False,
+        terminal=False,
     ):
         self.pos = pos
-        self.block_movement = block_movement
-        self.remove_on_interact = remove_on_interact
-        self.terminate_on_interact = terminate_on_interact
+        self.obstacle = obstacle
+        self.consumable = consumable
+        self.terminal = terminal
+        self.name = "object"
 
     def __eq__(self, other):
         if isinstance(other, (list, tuple)):
@@ -21,19 +22,20 @@ class Object:
     def copy(self):
         return type(self)(
             list(self.pos),
-            self.block_movement,
-            self.remove_on_interact,
-            self.terminate_on_interact,
+            self.obstacle,
+            self.consumable,
+            self.terminal,
         )
 
     def interact(self, agent):
-        if self.terminate_on_interact:
+        if self.terminal:
             agent.done = True
 
 
 class Wall(Object):
     def __init__(self, pos):
         super().__init__(pos, True, False)
+        self.name = "wall"
 
     def copy(self):
         return type(self)(list(self.pos))
@@ -46,6 +48,7 @@ class Reward(Object):
     def __init__(self, pos, value):
         super().__init__(pos, False, True)
         self.value = value
+        self.name = "reward"
 
     def copy(self):
         return type(self)(list(self.pos), self.value)
@@ -58,6 +61,7 @@ class Reward(Object):
 class Key(Object):
     def __init__(self, pos):
         super().__init__(pos, False, True)
+        self.name = "key"
 
     def copy(self):
         return type(self)(list(self.pos))
@@ -71,6 +75,7 @@ class Door(Object):
     def __init__(self, pos, orientation):
         super().__init__(pos, False, True)
         self.orientation = orientation
+        self.name = "door"
 
     def copy(self):
         return type(self)(list(self.pos), self.orientation)
@@ -85,6 +90,7 @@ class Warp(Object):
     def __init__(self, pos, target):
         super().__init__(pos, False, False)
         self.target = target
+        self.name = "warp pad"
 
     def copy(self):
         return type(self)(list(self.pos), list(self.target))
@@ -98,6 +104,7 @@ class Marker(Object):
     def __init__(self, pos, color):
         super().__init__(pos, False, False)
         self.color = color
+        self.name = "marker"
 
     def copy(self):
         return type(self)(list(self.pos), tuple(self.color))

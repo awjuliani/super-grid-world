@@ -1,6 +1,5 @@
 import sgw.utils.base_utils as base_utils
-import enum
-from sgw.object import Wall, Reward, Key, Door, Warp, Marker
+from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other
 
 
 def default_agent_start(grid_size, offset=2):

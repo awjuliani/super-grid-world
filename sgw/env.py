@@ -276,10 +276,10 @@ class SuperGridWorld(Env):
         # Convert numpy array to list for comparison
         target = list(map(int, target))
 
-        # Check all objects for blocking movement
+        # Check all objects for whether they are an obstacle
         for obj_type in self.objects.values():
             obj = next((o for o in obj_type if o == target), None)
-            if obj and obj.block_movement:
+            if obj and obj.obstacle:
                 return False
 
         return True
@@ -334,7 +334,7 @@ class SuperGridWorld(Env):
                 # Interact with the object
                 obj.interact(self.agent)
                 # Remove object if specified
-                if obj.remove_on_interact:
+                if obj.consumable:
                     obj_type.remove(obj)
 
     def close(self) -> None:
