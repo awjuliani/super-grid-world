@@ -1,18 +1,26 @@
 import numpy as np
 from typing import Dict, List, Tuple, Any
 from sgw.renderers.rend_interface import RendererInterface
+from gym import spaces
 
 
 class GridSymbolicRenderer(RendererInterface):
-    def __init__(self, grid_size: int):
+    def __init__(self, grid_size: int, window_size: int = None):
         self.grid_size = grid_size
+        self.window_size = window_size
 
-    def make_symbolic_obs(
-        self,
-        agent_pos: List[int],
-        objects: Dict[str, Any],
-        visible_walls: bool,
-    ) -> np.ndarray:
+    @property
+    def observation_space(self) -> spaces.Space:
+        """Return the observation space for symbolic observations."""
+        if self.window_size is None:
+            shape = (self.grid_size, self.grid_size, 6)
+        elif self.window_size == 3:
+            shape = (3, 3, 6)
+        else:  # window_size == 5
+            shape = (5, 5, 6)
+        return spaces.Box(0, 1, shape=shape)
+
+    def render_full(self, env: Any) -> np.ndarray:
         """
         Returns a symbolic representation of the environment in a numpy tensor.
         Tensor shape is (grid_size, grid_size, 6)
@@ -27,12 +35,12 @@ class GridSymbolicRenderer(RendererInterface):
         grid = np.zeros([self.grid_size, self.grid_size, 6])
 
         # Set agent's position
-        grid[agent_pos[0], agent_pos[1], 0] = 1
+        grid[env.agent_pos[0], env.agent_pos[1], 0] = 1
 
         # Set rewards
         reward_list = [
             (loc, reward)
-            for loc, reward in objects["rewards"].items()
+            for loc, reward in env.objects["rewards"].items()
             if type(reward) != list or reward[1] == 1
         ]
         for loc, reward in reward_list:
@@ -41,23 +49,23 @@ class GridSymbolicRenderer(RendererInterface):
             grid[loc[0], loc[1], 1] = reward
 
         # Set keys
-        key_locs = objects["keys"]
+        key_locs = env.objects["keys"]
         for loc in key_locs:
             grid[loc[0], loc[1], 2] = 1
 
         # Set doors
-        door_locs = objects["doors"]
+        door_locs = env.objects["doors"]
         for loc in door_locs:
             grid[loc[0], loc[1], 3] = 1
 
         # Set warps
-        warp_locs = objects["warps"].keys()
+        warp_locs = env.objects["warps"].keys()
         for loc in warp_locs:
             grid[loc[0], loc[1], 5] = 1
 
         # Set walls
-        if visible_walls:
-            walls = self.render_walls(objects["walls"])
+        if env.visible_walls:
+            walls = self.render_walls(env.objects["walls"])
             grid[:, :, 4] = walls
 
         return grid
@@ -71,20 +79,14 @@ class GridSymbolicRenderer(RendererInterface):
             grid[block[0], block[1]] = 1
         return grid
 
-    def make_symbolic_window_obs(
-        self,
-        agent_pos: List[int],
-        objects: Dict[str, Any],
-        visible_walls: bool,
-        size: int = 5,
-    ) -> np.ndarray:
+    def render_window(self, env: Any, size: int) -> np.ndarray:
         """
         Returns a windowed symbolic observation centered on the agent.
         """
         if size not in [3, 5]:
             raise ValueError("Window size must be 3 or 5")
 
-        obs = self.make_symbolic_obs(agent_pos, objects, visible_walls)
+        obs = self.render_full(env)
         pad_size = (size - 1) // 2
         full_window = np.pad(
             obs,
@@ -97,19 +99,15 @@ class GridSymbolicRenderer(RendererInterface):
         )
 
         window = full_window[
-            agent_pos[0] : agent_pos[0] + size,
-            agent_pos[1] : agent_pos[1] + size,
+            env.agent_pos[0] : env.agent_pos[0] + size,
+            env.agent_pos[1] : env.agent_pos[1] + size,
             :,
         ]
 
         return window
 
-    def render(self, env, **kwargs):
-        # Common interface render method.
-        # If 'window' is True, optionally using provided 'size' parameter, use windowed observation.
-        if kwargs.get("window", False):
-            size = kwargs.get("size", 5)
-            return self.make_symbolic_window_obs(
-                env.agent_pos, env.objects, env.visible_walls, size
-            )
-        return self.make_symbolic_obs(env.agent_pos, env.objects, env.visible_walls)
+    def render(self, env: Any, **kwargs) -> np.ndarray:
+        """Render an observation from the environment using the renderer."""
+        if self.window_size is not None:
+            return self.render_window(env, self.window_size)
+        return self.render_full(env)

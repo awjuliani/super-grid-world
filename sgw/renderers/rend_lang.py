@@ -1,5 +1,7 @@
 import numpy as np
 from sgw.renderers.rend_interface import RendererInterface
+from typing import Any
+from gym import spaces
 
 
 class GridLangRenderer(RendererInterface):
@@ -11,6 +13,11 @@ class GridLangRenderer(RendererInterface):
             "doors": "locked door",
             "warps": "warp pad",
         }
+
+    @property
+    def observation_space(self) -> spaces.Space:
+        """Return the observation space for language observations."""
+        return spaces.Discrete(1)
 
     def _get_region(self, pos):
         """Helper method to determine region in the maze."""
@@ -67,9 +74,9 @@ class GridLangRenderer(RendererInterface):
                     )
                     for pos, reward in positions.items()
                 ]
-            elif obj_type is "other":
+            elif obj_type == "other":
                 pos_type_pairs = [(pos, name) for pos, name in positions.items()]
-            elif obj_type is "locked door":
+            elif obj_type == "locked door":
                 pos_type_pairs = [(pos, "locked door") for pos in positions]
         else:
             pos_type_pairs = [(pos, obj_type) for pos in positions]
@@ -127,14 +134,7 @@ class GridLangRenderer(RendererInterface):
 
         return descriptions
 
-    def make_language_obs(
-        self,
-        agent_pos: list,
-        objects: dict,
-        keys: int,
-        first_person: bool = True,
-        vision_range: float = None,
-    ):
+    def make_language_obs(self, env: Any, first_person: bool = True) -> str:
         # Create pronouns dictionary locally based on first_person parameter
         pronouns = {
             "subject": "you" if first_person else "the agent",
@@ -142,10 +142,10 @@ class GridLangRenderer(RendererInterface):
             "be": "are" if first_person else "is",
         }
 
-        agent_pos = np.array(agent_pos)
+        agent_pos = np.array(env.agent_pos)
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
-            f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {keys} {'key' if keys == 1 else 'keys'}."
+            f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.keys} {'key' if env.keys == 1 else 'keys'}."
         )
 
         # Get boundary descriptions
@@ -154,49 +154,55 @@ class GridLangRenderer(RendererInterface):
         # Process all object types
         all_descriptions.extend(
             self._get_object_descriptions(
-                objects["walls"],
+                env.objects["walls"],
                 "wall",
                 agent_pos,
                 pronouns=pronouns,
-                vision_range=vision_range,
+                vision_range=env.vision_range if hasattr(env, "vision_range") else None,
             )
         )
 
         # Handle rewards
-        if objects["rewards"]:
+        if env.objects["rewards"]:
             all_descriptions.extend(
                 self._get_object_descriptions(
-                    objects["rewards"],
+                    env.objects["rewards"],
                     None,
                     agent_pos,
                     reward_val=True,
                     pronouns=pronouns,
-                    vision_range=vision_range,
+                    vision_range=(
+                        env.vision_range if hasattr(env, "vision_range") else None
+                    ),
                 )
             )
 
         # Handle standard objects (keys, doors, warps)
         for obj_type, display_name in self.obj_name_mapping.items():
-            if objects[obj_type]:
+            if env.objects[obj_type]:
                 all_descriptions.extend(
                     self._get_object_descriptions(
-                        objects[obj_type],
+                        env.objects[obj_type],
                         display_name,
                         agent_pos,
                         pronouns=pronouns,
-                        vision_range=vision_range,
+                        vision_range=(
+                            env.vision_range if hasattr(env, "vision_range") else None
+                        ),
                     )
                 )
 
         # Handle other objects
-        if "other" in objects and objects["other"]:
+        if "other" in env.objects and env.objects["other"]:
             all_descriptions.extend(
                 self._get_object_descriptions(
-                    objects["other"],
+                    env.objects["other"],
                     "other",
                     agent_pos,
                     pronouns=pronouns,
-                    vision_range=vision_range,
+                    vision_range=(
+                        env.vision_range if hasattr(env, "vision_range") else None
+                    ),
                 )
             )
 
@@ -206,16 +212,7 @@ class GridLangRenderer(RendererInterface):
             else f"{base_description}\n\n" + "\n".join(all_descriptions)
         )
 
-    def render(self, env, **kwargs):
+    def render(self, env: Any, **kwargs) -> str:
         # Render method for language observation.
         first_person = kwargs.get("first_person", True)
-        vision_range = kwargs.get(
-            "vision_range", env.vision_range if hasattr(env, "vision_range") else None
-        )
-        return self.make_language_obs(
-            env.agent_pos,
-            env.objects,
-            env.keys,
-            first_person=first_person,
-            vision_range=vision_range,
-        )
+        return self.make_language_obs(env, first_person=first_person)

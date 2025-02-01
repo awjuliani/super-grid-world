@@ -1,5 +1,6 @@
 from typing import Dict
 import numpy as np
+import cv2 as cv
 
 
 def onehot(value: int, max_value: int):
@@ -42,3 +43,11 @@ def softmax(x, axis=-1):
     """
     e_x = np.exp(x - np.max(x))
     return e_x / np.sum(e_x, axis=axis)
+
+
+def resize_obs(img, resolution, torch_obs):
+    """Unified image resizing logic."""
+    if torch_obs:
+        img = cv.resize(img, (64, 64), interpolation=cv.INTER_NEAREST)
+        return np.moveaxis(img, 2, 0) / 255.0
+    return cv.resize(img, (resolution, resolution), interpolation=cv.INTER_NEAREST)

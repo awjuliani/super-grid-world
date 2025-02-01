@@ -15,7 +15,6 @@ from sgw.renderers.rend_symbolic import GridSymbolicRenderer
 from sgw.renderers.rend_ascii import GridASCIIRenderer
 from sgw.renderers.rend_3d import Grid3DRenderer
 import matplotlib.pyplot as plt
-import cv2 as cv
 import copy
 
 
@@ -94,27 +93,20 @@ class SuperGridWorld(Env):
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
-            seed, resolution, use_noop, manual_collect, add_outer_walls, vision_range
+            seed, use_noop, manual_collect, add_outer_walls, vision_range
         )
 
         # Setup grid and walls
         self._init_grid(template, size)
 
-        # Setup renderers
-        self._init_renderers()
-
         # Setup action and observation spaces
-        self.control_type = control_type
-        self.torch_obs = torch_obs
-        self.max_orient = 3
-        self.set_action_space()
-        self.set_obs_space(obs_type)
+        self.set_action_space(control_type)
+        self.set_obs_space(obs_type, torch_obs, resolution)
 
     def _init_basic_attrs(
-        self, seed, resolution, use_noop, manual_collect, add_outer_walls, vision_range
+        self, seed, use_noop, manual_collect, add_outer_walls, vision_range
     ):
         self.rng = np.random.RandomState(seed)
-        self.resolution = resolution
         self.use_noop = use_noop
         self.manual_collect = manual_collect
         self.add_outer_walls = add_outer_walls
@@ -141,14 +133,43 @@ class SuperGridWorld(Env):
             "walls": walls,
         }
 
-    def _init_renderers(self):
-        self.renderer_2d = Grid2DRenderer(self.grid_size)
-        self.renderer_symbolic = GridSymbolicRenderer(self.grid_size)
-        self.renderer_ascii = GridASCIIRenderer(self.grid_size)
-        self.lang_renderer = GridLangRenderer(self.grid_size)
-        self.renderer_3d = Grid3DRenderer(self.resolution)
+    def _init_renderers(self, resolution, torch_obs):
+        """Initialize renderers based on observation type."""
+        if self.obs_type == ObservationType.visual:
+            self.renderer = Grid2DRenderer(
+                self.grid_size, resolution=resolution, torch_obs=torch_obs
+            )
+        elif self.obs_type == ObservationType.visual_window:
+            self.renderer = Grid2DRenderer(
+                self.grid_size,
+                window_size=2,
+                resolution=resolution,
+                torch_obs=torch_obs,
+            )
+        elif self.obs_type == ObservationType.visual_window_tight:
+            self.renderer = Grid2DRenderer(
+                self.grid_size,
+                window_size=1,
+                resolution=resolution,
+                torch_obs=torch_obs,
+            )
+        elif self.obs_type == ObservationType.symbolic:
+            self.renderer = GridSymbolicRenderer(self.grid_size)
+        elif self.obs_type == ObservationType.symbolic_window:
+            self.renderer = GridSymbolicRenderer(self.grid_size, window_size=5)
+        elif self.obs_type == ObservationType.symbolic_window_tight:
+            self.renderer = GridSymbolicRenderer(self.grid_size, window_size=3)
+        elif self.obs_type == ObservationType.rendered_3d:
+            self.renderer = Grid3DRenderer(resolution)
+        elif self.obs_type == ObservationType.ascii:
+            self.renderer = GridASCIIRenderer(self.grid_size)
+        elif self.obs_type == ObservationType.language:
+            self.renderer = GridLangRenderer(self.grid_size)
+        else:
+            raise ValueError("No valid ObservationType provided.")
 
-    def set_action_space(self):
+    def set_action_space(self, control_type):
+        self.control_type = control_type
         if self.control_type == ControlType.egocentric:
             # For egocentric orientation, we use rotation/move semantics
             actions = [
@@ -156,7 +177,6 @@ class SuperGridWorld(Env):
                 Action.ROTATE_RIGHT,
                 Action.MOVE_FORWARD,
             ]
-            self.orient_size = 4
         elif self.control_type == ControlType.allocentric:
             # For allocentric orientation, the actions represent absolute directions
             actions = [
@@ -165,7 +185,6 @@ class SuperGridWorld(Env):
                 Action.MOVE_DOWN,
                 Action.MOVE_LEFT,
             ]
-            self.orient_size = 1
         else:
             raise Exception("No valid ControlType provided.")
         if self.use_noop:
@@ -175,77 +194,21 @@ class SuperGridWorld(Env):
         self.action_list = actions
         self.action_space = spaces.Discrete(len(actions))
 
-    def set_obs_space(self, obs_type):
+    def set_obs_space(self, obs_type, torch_obs, resolution):
         if isinstance(obs_type, str):
             obs_type = ObservationType(obs_type)
-        self.obs_mode = obs_type
+        self.obs_type = obs_type
 
-        # Map observation types to their renderers and kwargs
-        self.obs_config = {
-            ObservationType.visual: lambda: self.resize_obs(
-                self.renderer_2d.render_frame(self)
-            ),
-            ObservationType.visual_window: lambda: self.resize_obs(
-                self.renderer_2d.render_window(self, 2)
-            ),
-            ObservationType.visual_window_tight: lambda: self.resize_obs(
-                self.renderer_2d.render_window(self, 1)
-            ),
-            ObservationType.symbolic: lambda: self.make_symbolic_obs(),
-            ObservationType.symbolic_window: lambda: self.make_symbolic_window_obs(),
-            ObservationType.symbolic_window_tight: lambda: self.make_symbolic_window_obs(
-                size=3
-            ),
-            ObservationType.rendered_3d: lambda: self.resize_obs(
-                self.renderer_3d.render_frame(self)
-            ),
-            ObservationType.ascii: lambda: self.renderer_ascii.make_ascii_obs(
-                self.agent_pos, self.objects
-            ),
-            ObservationType.language: lambda: self.lang_renderer.make_language_obs(
-                self.agent_pos,
-                self.objects,
-                self.keys,
-                first_person=True,
-                vision_range=self.vision_range,
-            ),
-        }
+        # Initialize the appropriate renderer
+        self._init_renderers(resolution, torch_obs)
 
-        if obs_type not in self.obs_config:
-            raise ValueError("No valid ObservationType provided.")
-
-        # Define observation spaces based on observation type without requiring a sample
-        if obs_type == ObservationType.language or obs_type == ObservationType.ascii:
-            # For language/ascii observations, use a discrete space
-            self.obs_space = spaces.Discrete(1)
-        elif obs_type in [
-            ObservationType.symbolic,
-            ObservationType.symbolic_window,
-            ObservationType.symbolic_window_tight,
-        ]:
-            # For symbolic observations, use a box space with appropriate dimensions
-            if obs_type == ObservationType.symbolic:
-                shape = (self.grid_size, self.grid_size)
-            elif obs_type == ObservationType.symbolic_window_tight:
-                shape = (3, 3)
-            else:  # symbolic_window
-                shape = (5, 5)
-            self.obs_space = spaces.Box(0, 1, shape=shape)
-        else:
-            # For visual observations (including 3D), use an image space
-            if self.torch_obs:
-                # PyTorch format (channels, height, width)
-                self.obs_space = spaces.Box(0, 1, shape=(3, 64, 64))
-            else:
-                # Standard format (height, width, channels)
-                self.obs_space = spaces.Box(
-                    0, 1, shape=(self.resolution, self.resolution, 3)
-                )
+        # Get the observation space from the renderer
+        self.obs_space = self.renderer.observation_space
 
     @property
     def observation(self):
-        handler = self.obs_config[self.obs_mode]
-        return handler()
+        """Get the current observation from the environment."""
+        return self.renderer.render(self)
 
     def reset(
         self,
@@ -332,47 +295,14 @@ class SuperGridWorld(Env):
             if [i, j] not in walls
         ]
 
-    def make_symbolic_obs(self):
-        return self.renderer_symbolic.make_symbolic_obs(
-            self.agent_pos,
-            self.objects,
-            self.visible_walls,
-        )
-
-    def make_symbolic_window_obs(self, size: int = 5):
-        return self.renderer_symbolic.make_symbolic_window_obs(
-            self.agent_pos,
-            self.objects,
-            self.visible_walls,
-            size,
-        )
-
     def render(self, provide=False, mode="human"):
-        image = self.renderer_2d.render_frame(self)
-        if self.obs_mode == ObservationType.rendered_3d:
-            img_3d = self.renderer_3d.render_frame(self)
-            img_2d_resized = cv.resize(
-                image,
-                (self.resolution, self.resolution),
-                interpolation=cv.INTER_NEAREST,
-            )
-            image = np.concatenate((img_3d, img_2d_resized), axis=1)
-
+        image = self.renderer.render(self)
         if mode == "human":
             plt.imshow(image)
             plt.axis("off")
             plt.show()
         if provide:
             return image
-
-    def resize_obs(self, img):
-        """Unified image resizing logic."""
-        if self.torch_obs:
-            img = cv.resize(img, (64, 64), interpolation=cv.INTER_NEAREST)
-            return np.moveaxis(img, 2, 0) / 255.0
-        return cv.resize(
-            img, (self.resolution, self.resolution), interpolation=cv.INTER_NEAREST
-        )
 
     def move_agent(self, direction: np.array):
         """
@@ -411,7 +341,7 @@ class SuperGridWorld(Env):
         """
         Rotates the agent orientation in the given direction.
         """
-        self.orientation = (self.orientation + direction) % (self.max_orient + 1)
+        self.orientation = (self.orientation + direction) % 4
 
     def step(self, action: int):
         """Steps the environment forward given an action."""
@@ -509,6 +439,6 @@ class SuperGridWorld(Env):
             self.agent_pos = self.objects["warps"][eval_pos]
 
     def close(self) -> None:
-        if self.obs_mode == ObservationType.rendered_3d:
-            self.renderer_3d.close()
+        if self.obs_type == ObservationType.rendered_3d:
+            self.renderer.close()
         return super().close()

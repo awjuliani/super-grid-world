@@ -3,6 +3,8 @@ import cv2 as cv
 import matplotlib.pyplot as plt
 from typing import Tuple, List, Dict, Any
 from sgw.renderers.rend_interface import RendererInterface
+from sgw.utils.base_utils import resize_obs
+from gym import spaces
 
 
 class Grid2DRenderer(RendererInterface):
@@ -24,14 +26,34 @@ class Grid2DRenderer(RendererInterface):
     AGENT_COLOR = (0, 0, 0)
     TEMPLATE_COLOR = (150, 150, 150)
 
-    def __init__(self, grid_size: int, block_size: int = 32, block_border: int = 3):
+    def __init__(
+        self,
+        grid_size: int,
+        block_size: int = 32,
+        block_border: int = 3,
+        window_size: int = None,
+        resolution: int = 256,
+        torch_obs: bool = False,
+    ):
         self.grid_size = grid_size
         self.block_size = block_size
         self.block_border = block_border
+        self.window_size = window_size
+        self.resolution = resolution
+        self.torch_obs = torch_obs
         self.cached_image = None
         self.cached_objects = None
         self.cached_visible_walls = None
         self.img_size = self.block_size * self.grid_size
+
+    @property
+    def observation_space(self) -> spaces.Space:
+        """Return the observation space for visual observations."""
+        if self.torch_obs:
+            # PyTorch format (channels, height, width)
+            return spaces.Box(0, 1, shape=(3, 64, 64))
+        # Standard format (height, width, channels)
+        return spaces.Box(0, 1, shape=(self.resolution, self.resolution, 3))
 
     def get_square_edges(
         self, y: int, x: int
@@ -224,7 +246,7 @@ class Grid2DRenderer(RendererInterface):
             img = self.cached_image.copy()
 
         self.render_agent(img, env.agent_pos, env.looking)
-        return img
+        return resize_obs(img, env.resolution, env.torch_obs)
 
     def _should_update_cache(self, env: Any) -> bool:
         objects_changed = self.cached_objects != env.objects
@@ -267,10 +289,11 @@ class Grid2DRenderer(RendererInterface):
         return window
 
     def render(self, env: Any, **kwargs) -> np.ndarray:
-        # Common interface render method. If mode='human', display using matplotlib.
-        mode = kwargs.get("mode", None)
+        """Render an observation from the environment using the renderer."""
+        if self.window_size is not None:
+            return self.render_window(env, self.window_size)
         img = self.render_frame(env)
-        if mode == "human":
+        if kwargs.get("mode", None) == "human":
             plt.imshow(img)
             plt.axis("off")
             plt.show()

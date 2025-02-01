@@ -10,6 +10,7 @@ from sgw.utils.gl_utils import (
     render_sphere,
 )
 from sgw.renderers.rend_interface import RendererInterface
+from sgw.utils.base_utils import resize_obs
 
 
 class Grid3DRenderer(RendererInterface):
@@ -139,7 +140,8 @@ class Grid3DRenderer(RendererInterface):
         image = np.frombuffer(buffer, dtype=np.uint8).reshape(
             self.height, self.width, 3
         )
-        return np.flip(image, axis=0)  # Only flip vertically
+        image = np.flip(image, axis=0)  # Only flip vertically
+        return resize_obs(image, env.resolution, env.torch_obs)
 
     def render(self, env, **kwargs):
         # Implement the common interface render method
