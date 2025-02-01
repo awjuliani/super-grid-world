@@ -11,15 +11,44 @@ class Agent:
             [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
         )
 
+    def process_action(self, action, control_type):
+        """
+        Process an action based on the control type.
+        Returns the movement direction if any, None otherwise.
+        """
+        from sgw.env import Action, ControlType
+
+        if control_type == ControlType.egocentric:
+            if action == Action.ROTATE_LEFT:
+                self.rotate(-1)
+                return None
+            elif action == Action.ROTATE_RIGHT:
+                self.rotate(1)
+                return None
+            elif action == Action.MOVE_FORWARD:
+                return self.direction_map[self.orientation]
+        else:  # allocentric orientation
+            allocentric_mapping = {
+                Action.MOVE_UP: 0,
+                Action.MOVE_RIGHT: 1,
+                Action.MOVE_DOWN: 2,
+                Action.MOVE_LEFT: 3,
+            }
+            if action in allocentric_mapping:
+                direction_idx = allocentric_mapping[action]
+                self.looking = direction_idx
+                return self.direction_map[direction_idx]
+        return None
+
     def move(self, direction):
         """
-        Moves the agent in the given direction if the move is valid.
-        Returns True if move was successful, False otherwise.
+        Moves the agent in the given direction.
         """
-        new_pos = np.array(self.pos) + direction
-        new_pos = list(map(int, new_pos))
-        self.pos = new_pos
-        return True
+        if direction is not None:
+            new_pos = np.array(self.pos) + direction
+            self.pos = list(map(int, new_pos))
+            return True
+        return False
 
     def rotate(self, direction):
         """

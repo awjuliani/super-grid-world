@@ -13,3 +13,7 @@ class RendererInterface(ABC):
     def observation_space(self) -> spaces.Space:
         """Return the observation space for this renderer."""
         pass
+
+    def close(self):
+        """Close the renderer."""
+        pass

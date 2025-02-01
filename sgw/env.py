@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import copy
 
 
-class ObservationType(enum.Enum):
+class ObsType(enum.Enum):
     visual = "visual"
     visual_window = "visual_window"
     visual_window_tight = "visual_window_tight"
@@ -50,34 +50,13 @@ class Action(enum.Enum):
 class SuperGridWorld(Env):
     """
     Super Grid World. A 2D maze-like OpenAI gym compatible RL environment.
-
-    Parameters
-    ----------
-    template : GridTemplate
-        The layout template to use for the environment.
-    size : GridSize
-        The size of the grid (micro, small, large).
-    obs_type : ObservationType
-        The type of observation to use.
-    control_type : ControlType
-        The type of control to use.
-    seed : int
-        The seed to use for the environment.
-    use_noop : bool
-        Whether to include a no-op action in the action space.
-    torch_obs : bool
-        Whether to use torch observations.
-        This converts the observation to a torch tensor.
-        If the observation is an image, it will be in the shape (3, 64, 64).
-    manual_collect : bool
-        Whether to use the collect reward action (default == False).
     """
 
     def __init__(
         self,
         template_name: str = "empty",
         grid_size: int = 11,
-        obs_type: ObservationType = ObservationType.visual,
+        obs_type: ObsType = ObsType.visual,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
         use_noop: bool = False,
@@ -108,9 +87,6 @@ class SuperGridWorld(Env):
         self.add_outer_walls = add_outer_walls
         self.vision_range = vision_range
         self.agent = None  # Will be initialized in reset
-        self.direction_map = np.array(
-            [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
-        )
 
     def _init_grid(self, template, size):
         self.agent_start_pos, self.template_objects = generate_layout(
@@ -121,33 +97,33 @@ class SuperGridWorld(Env):
     def _init_renderers(self, resolution, torch_obs):
         """Initialize renderers based on observation type."""
         renderer_map = {
-            ObservationType.visual: lambda: Grid2DRenderer(
+            ObsType.visual: lambda: Grid2DRenderer(
                 self.grid_size, resolution=resolution, torch_obs=torch_obs
             ),
-            ObservationType.visual_window: lambda: Grid2DRenderer(
+            ObsType.visual_window: lambda: Grid2DRenderer(
                 self.grid_size,
                 window_size=2,
                 resolution=resolution,
                 torch_obs=torch_obs,
             ),
-            ObservationType.visual_window_tight: lambda: Grid2DRenderer(
+            ObsType.visual_window_tight: lambda: Grid2DRenderer(
                 self.grid_size,
                 window_size=1,
                 resolution=resolution,
                 torch_obs=torch_obs,
             ),
-            ObservationType.symbolic: lambda: GridSymbolicRenderer(self.grid_size),
-            ObservationType.symbolic_window: lambda: GridSymbolicRenderer(
+            ObsType.symbolic: lambda: GridSymbolicRenderer(self.grid_size),
+            ObsType.symbolic_window: lambda: GridSymbolicRenderer(
                 self.grid_size, window_size=5
             ),
-            ObservationType.symbolic_window_tight: lambda: GridSymbolicRenderer(
+            ObsType.symbolic_window_tight: lambda: GridSymbolicRenderer(
                 self.grid_size, window_size=3
             ),
-            ObservationType.rendered_3d: lambda: Grid3DRenderer(
+            ObsType.rendered_3d: lambda: Grid3DRenderer(
                 resolution=resolution, torch_obs=torch_obs
             ),
-            ObservationType.ascii: lambda: GridASCIIRenderer(self.grid_size),
-            ObservationType.language: lambda: GridLangRenderer(self.grid_size),
+            ObsType.ascii: lambda: GridASCIIRenderer(self.grid_size),
+            ObsType.language: lambda: GridLangRenderer(self.grid_size),
         }
 
         if self.obs_type not in renderer_map:
@@ -159,14 +135,14 @@ class SuperGridWorld(Env):
         self.control_type = control_type
         if self.control_type == ControlType.egocentric:
             # For egocentric orientation, we use rotation/move semantics
-            actions = [
+            self.valid_actions = [
                 Action.ROTATE_LEFT,
                 Action.ROTATE_RIGHT,
                 Action.MOVE_FORWARD,
             ]
         elif self.control_type == ControlType.allocentric:
             # For allocentric orientation, the actions represent absolute directions
-            actions = [
+            self.valid_actions = [
                 Action.MOVE_UP,
                 Action.MOVE_RIGHT,
                 Action.MOVE_DOWN,
@@ -175,15 +151,14 @@ class SuperGridWorld(Env):
         else:
             raise Exception("No valid ControlType provided.")
         if self.use_noop:
-            actions.append(Action.NOOP)
+            self.valid_actions.append(Action.NOOP)
         if self.manual_collect:
-            actions.append(Action.COLLECT)
-        self.action_list = actions
-        self.action_space = spaces.Discrete(len(actions))
+            self.valid_actions.append(Action.COLLECT)
+        self.action_space = spaces.Discrete(len(self.valid_actions))
 
     def set_obs_space(self, obs_type, torch_obs, resolution):
         if isinstance(obs_type, str):
-            obs_type = ObservationType(obs_type)
+            obs_type = ObsType(obs_type)
         self.obs_type = obs_type
 
         # Initialize the appropriate renderer
@@ -221,12 +196,10 @@ class SuperGridWorld(Env):
         )
 
         # Handle objects setup
-        self.objects = self._setup_objects(objects)
-
-        self.free_spots = self.make_free_spots(self.objects["walls"])
+        self._setup_objects(objects)
 
         # Set agent position
-        self.agent_pos = self._setup_agent(agent_pos, random_start)
+        self._setup_agent(agent_pos, random_start)
 
         return self.observation
 
@@ -250,11 +223,9 @@ class SuperGridWorld(Env):
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
         """Helper method to set up environment objects."""
-        use_objects = copy.deepcopy(
+        self.objects = copy.deepcopy(
             objects if objects is not None else self.template_objects
         )
-
-        return use_objects
 
     def _setup_agent(self, agent_pos: list = None, random_start: bool = False) -> list:
         """Helper method to determine the agent's starting position."""
@@ -266,14 +237,18 @@ class SuperGridWorld(Env):
         self.agent = Agent(pos)
         return pos
 
-    def make_free_spots(self, walls: list):
-        wall_positions = [wall.pos for wall in walls]
-        return [
-            [i, j]
-            for i in range(self.grid_size)
-            for j in range(self.grid_size)
-            if [i, j] not in wall_positions
-        ]
+    @property
+    def free_spots(self):
+        # Create set of all grid positions
+        all_positions = {
+            (i, j) for i in range(self.grid_size) for j in range(self.grid_size)
+        }
+        # Create set of occupied positions
+        occupied_positions = {
+            tuple(obj.pos) for obj_type in self.objects.values() for obj in obj_type
+        }
+        # Return difference as list of lists
+        return [list(pos) for pos in all_positions - occupied_positions]
 
     def render(self, provide=False, mode="human"):
         image = self.renderer.render(self)
@@ -286,7 +261,7 @@ class SuperGridWorld(Env):
 
     def move_agent(self, direction: np.array):
         """
-        Moves the agent in the given direction.
+        Moves the agent in the given direction if valid.
         """
         new_pos = np.array(self.agent.pos) + direction
         if self.check_target(new_pos):
@@ -347,35 +322,17 @@ class SuperGridWorld(Env):
         """Determines if collection is allowed based on action and manual_collect setting."""
         if not self.manual_collect:
             return True
-        chosen_action = self.action_list[action]
+        chosen_action = self.valid_actions[action]
         return chosen_action == Action.COLLECT
 
     def _process_action(self, action: int):
-        """Unified action processing for both orientation types using semantic labels."""
-        chosen_action = self.action_list[action]
-        if self.control_type == ControlType.egocentric:
-            if chosen_action == Action.ROTATE_LEFT:
-                self.agent.rotate(-1)
-            elif chosen_action == Action.ROTATE_RIGHT:
-                self.agent.rotate(1)
-            elif chosen_action == Action.MOVE_FORWARD:
-                self.move_agent(self.direction_map[self.agent.orientation])
-        else:  # allocentric orientation
-            if chosen_action in (
-                Action.MOVE_UP,
-                Action.MOVE_RIGHT,
-                Action.MOVE_DOWN,
-                Action.MOVE_LEFT,
-            ):
-                allocentric_mapping = {
-                    Action.MOVE_UP: 0,
-                    Action.MOVE_RIGHT: 1,
-                    Action.MOVE_DOWN: 2,
-                    Action.MOVE_LEFT: 3,
-                }
-                direction_idx = allocentric_mapping[chosen_action]
-                self.agent.looking = direction_idx
-                self.move_agent(self.direction_map[direction_idx])
+        """Process the action and move the agent if applicable."""
+        chosen_action = self.valid_actions[action]
+        direction = self.agent.process_action(chosen_action, self.control_type)
+        if direction is not None and self.check_target(
+            np.array(self.agent.pos) + direction
+        ):
+            self.agent.move(direction)
 
     def _calculate_reward(self, action: int) -> float:
         """Calculate reward based on action and current state."""
@@ -416,6 +373,5 @@ class SuperGridWorld(Env):
             self.agent.teleport(warp_obj.target)
 
     def close(self) -> None:
-        if self.obs_type == ObservationType.rendered_3d:
-            self.renderer.close()
+        self.renderer.close()
         return super().close()
