@@ -11,14 +11,15 @@ from sgw.utils.gl_utils import (
 )
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
+from gym import spaces
 
 
 class Grid3DRenderer(RendererInterface):
-    def __init__(self, resolution=128):
+    def __init__(self, resolution=128, torch_obs=False):
         self.resolution = resolution
         self.last_objects = None
         self.texture_cache = {}  # Add texture cache as an instance variable
-
+        self.torch_obs = torch_obs
         self.initialize_glfw()
         self.configure_opengl()
 
@@ -26,6 +27,15 @@ class Grid3DRenderer(RendererInterface):
         glfw.make_context_current(self.window)
         self.load_textures()
         self.display_lists = {}
+
+    @property
+    def observation_space(self) -> spaces.Space:
+        """Return the observation space for visual observations."""
+        if self.torch_obs:
+            # PyTorch format (channels, height, width)
+            return spaces.Box(0, 1, shape=(3, 64, 64))
+        # Standard format (height, width, channels)
+        return spaces.Box(0, 1, shape=(self.resolution, self.resolution, 3))
 
     def initialize_glfw(self):
         if not glfw.init():
@@ -80,25 +90,31 @@ class Grid3DRenderer(RendererInterface):
         list_id = glGenLists(1)
         glNewList(list_id, GL_COMPILE)
         for wall in walls:
-            render_cube(wall[0], 0.0, wall[1], self.textures["wall"])
+            render_cube(wall.pos[0], 0.0, wall.pos[1], self.textures["wall"])
         glEndList()
         return list_id
 
     def create_objects_display_list(self, env):
         list_id = glGenLists(1)
         glNewList(list_id, GL_COMPILE)
-        for reward, info in env.objects["rewards"].items():
-            reward_val = info[0] if isinstance(info, list) else info
+        for reward in env.objects["rewards"]:
+            reward_val = (
+                reward.value[0] if isinstance(reward.value, list) else reward.value
+            )
             texture = (
                 self.textures["gem"] if reward_val > 0 else self.textures["gem_bad"]
             )
-            render_sphere(reward[0], 0.0, reward[1], 0.25, texture=texture)
+            render_sphere(reward.pos[0], 0.0, reward.pos[1], 0.25, texture=texture)
         for door in env.objects["doors"]:
-            render_cube(door[0], 0.0, door[1], self.textures["wood"])
+            render_cube(door.pos[0], 0.0, door.pos[1], self.textures["wood"])
         for key in env.objects["keys"]:
-            render_sphere(key[0], -0.1, key[1], 0.1, texture=self.textures["key"])
+            render_sphere(
+                key.pos[0], -0.1, key.pos[1], 0.1, texture=self.textures["key"]
+            )
         for warp in env.objects["warps"]:
-            render_sphere(warp[0], -0.5, warp[1], 0.33, texture=self.textures["warp"])
+            render_sphere(
+                warp.pos[0], -0.5, warp.pos[1], 0.33, texture=self.textures["warp"]
+            )
         glEndList()
         return list_id
 
@@ -106,7 +122,7 @@ class Grid3DRenderer(RendererInterface):
         glfw.make_context_current(self.window)  # Make context current
         glViewport(0, 0, self.width, self.height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        self.set_camera(env.agent_pos, env.looking)
+        self.set_camera(env.agent.pos, env.agent.looking)
 
         # Render walls
         if "walls" not in self.display_lists or env.objects != self.last_objects:
@@ -141,7 +157,7 @@ class Grid3DRenderer(RendererInterface):
             self.height, self.width, 3
         )
         image = np.flip(image, axis=0)  # Only flip vertically
-        return resize_obs(image, env.resolution, env.torch_obs)
+        return resize_obs(image, self.resolution, self.torch_obs)
 
     def render(self, env, **kwargs):
         # Implement the common interface render method

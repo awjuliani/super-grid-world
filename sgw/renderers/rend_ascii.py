@@ -41,42 +41,42 @@ class GridASCIIRenderer(RendererInterface):
         grid = np.zeros((self.grid_size, self.grid_size))
 
         # Set agent position
-        grid[env.agent_pos[0], env.agent_pos[1]] = 1
+        grid[env.agent.pos[0], env.agent.pos[1]] = 1
 
         # Set walls
-        for block in env.objects["walls"]:
-            grid[block[0], block[1]] = 2
+        for wall in env.objects["walls"]:
+            grid[wall.pos[0], wall.pos[1]] = 2
 
         # Set rewards
-        for reward_pos, reward_val in env.objects["rewards"].items():
-            if isinstance(reward_val, list):
-                reward_val = reward_val[0]
-            if reward_val > 0:
-                grid[reward_pos[0], reward_pos[1]] = 3
+        for reward in env.objects["rewards"]:
+            value = reward.value
+            if isinstance(value, list):
+                value = value[0]
+            if value > 0:
+                grid[reward.pos[0], reward.pos[1]] = 3
             else:
-                grid[reward_pos[0], reward_pos[1]] = 4
+                grid[reward.pos[0], reward.pos[1]] = 4
 
         # Set keys
-        for key_pos in env.objects["keys"]:
-            grid[key_pos[0], key_pos[1]] = 5
+        for key in env.objects["keys"]:
+            grid[key.pos[0], key.pos[1]] = 5
 
         # Set doors
-        for door_pos in env.objects["doors"]:
-            grid[door_pos[0], door_pos[1]] = 6
+        for door in env.objects["doors"]:
+            grid[door.pos[0], door.pos[1]] = 6
 
         # Set warps
-        for warp_pos in env.objects["warps"]:
-            grid[warp_pos[0], warp_pos[1]] = 7
+        for warp in env.objects["warps"]:
+            grid[warp.pos[0], warp.pos[1]] = 7
 
         # Set other objects
-        for other_pos, other_name in env.objects["other"].items():
-            grid[other_pos[0], other_pos[1]] = 8
+        for other in env.objects["other"]:
+            grid[other.pos[0], other.pos[1]] = 8
 
-        # Convert numerical grid to ASCII characters
-        ascii_grid = np.vectorize(self.ascii_map.get)(grid)
-
-        # Join with newlines to create final string
-        return "\n".join(["".join(row) for row in ascii_grid])
+        # Convert grid to ASCII string
+        return "\n".join(
+            "".join(self.ascii_map[int(cell)] for cell in row) for row in grid
+        )
 
     def render(self, env: Any, **kwargs) -> str:
         # Render method for ASCII observation.

@@ -52,7 +52,7 @@ class GridLangRenderer(RendererInterface):
 
     def _get_object_descriptions(
         self,
-        positions,
+        objects,
         obj_type,
         agent_pos,
         reward_val=None,
@@ -62,24 +62,24 @@ class GridLangRenderer(RendererInterface):
         """Unified helper method to generate descriptions for any type of object."""
         descriptions = []
         pos_type_pairs = []
-        if isinstance(positions, dict):
-            if reward_val is not None:
-                # Handle rewards dictionary
-                pos_type_pairs = [
-                    (
-                        pos,
-                        self.reward_types[
-                            reward[0] if isinstance(reward, list) else reward > 0
-                        ],
-                    )
-                    for pos, reward in positions.items()
-                ]
-            elif obj_type == "other":
-                pos_type_pairs = [(pos, name) for pos, name in positions.items()]
-            elif obj_type == "locked door":
-                pos_type_pairs = [(pos, "locked door") for pos in positions]
+
+        if obj_type == "wall":
+            pos_type_pairs = [(obj.pos, "wall") for obj in objects]
+        elif reward_val is not None:
+            # Handle rewards
+            pos_type_pairs = [
+                (
+                    obj.pos,
+                    self.reward_types[
+                        obj.value[0] if isinstance(obj.value, list) else obj.value > 0
+                    ],
+                )
+                for obj in objects
+            ]
+        elif obj_type == "other":
+            pos_type_pairs = [(obj.pos, obj.name) for obj in objects]
         else:
-            pos_type_pairs = [(pos, obj_type) for pos in positions]
+            pos_type_pairs = [(obj.pos, obj_type) for obj in objects]
 
         for pos, item_type in pos_type_pairs:
             direction, distance = self._get_direction_and_distance(pos, agent_pos)
@@ -142,10 +142,10 @@ class GridLangRenderer(RendererInterface):
             "be": "are" if first_person else "is",
         }
 
-        agent_pos = np.array(env.agent_pos)
+        agent_pos = np.array(env.agent.pos)
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
-            f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.keys} {'key' if env.keys == 1 else 'keys'}."
+            f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.agent.keys} {'key' if env.agent.keys == 1 else 'keys'}."
         )
 
         # Get boundary descriptions

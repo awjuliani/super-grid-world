@@ -35,37 +35,32 @@ class GridSymbolicRenderer(RendererInterface):
         grid = np.zeros([self.grid_size, self.grid_size, 6])
 
         # Set agent's position
-        grid[env.agent_pos[0], env.agent_pos[1], 0] = 1
+        grid[env.agent.pos[0], env.agent.pos[1], 0] = 1
 
         # Set rewards
-        reward_list = [
-            (loc, reward)
-            for loc, reward in env.objects["rewards"].items()
-            if type(reward) != list or reward[1] == 1
-        ]
-        for loc, reward in reward_list:
-            if type(reward) == list:
-                reward = reward[0]
-            grid[loc[0], loc[1], 1] = reward
+        for reward in env.objects["rewards"]:
+            value = reward.value
+            if isinstance(value, list):
+                if value[1] == 1:  # Only include if active
+                    grid[reward.pos[0], reward.pos[1], 1] = value[0]
+            else:
+                grid[reward.pos[0], reward.pos[1], 1] = value
 
         # Set keys
-        key_locs = env.objects["keys"]
-        for loc in key_locs:
-            grid[loc[0], loc[1], 2] = 1
+        for key in env.objects["keys"]:
+            grid[key.pos[0], key.pos[1], 2] = 1
 
         # Set doors
-        door_locs = env.objects["doors"]
-        for loc in door_locs:
-            grid[loc[0], loc[1], 3] = 1
+        for door in env.objects["doors"]:
+            grid[door.pos[0], door.pos[1], 3] = 1
 
         # Set warps
-        warp_locs = env.objects["warps"].keys()
-        for loc in warp_locs:
-            grid[loc[0], loc[1], 5] = 1
+        for warp in env.objects["warps"]:
+            grid[warp.pos[0], warp.pos[1], 5] = 1
 
         # Set walls
         if env.visible_walls:
-            walls = self.render_walls(env.objects["walls"])
+            walls = self.render_walls([wall.pos for wall in env.objects["walls"]])
             grid[:, :, 4] = walls
 
         return grid
@@ -99,8 +94,8 @@ class GridSymbolicRenderer(RendererInterface):
         )
 
         window = full_window[
-            env.agent_pos[0] : env.agent_pos[0] + size,
-            env.agent_pos[1] : env.agent_pos[1] + size,
+            env.agent.pos[0] : env.agent.pos[0] + size,
+            env.agent.pos[1] : env.agent.pos[1] + size,
             :,
         ]
 

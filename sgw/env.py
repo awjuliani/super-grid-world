@@ -1,19 +1,15 @@
-from typing import Dict
+from typing import Dict, List
 from gym import Env, spaces
 import numpy as np
 import random
 import enum
-from sgw.templates import (
-    generate_layout,
-    LayoutTemplate,
-    GridSize,
-    add_outer,
-)
+from sgw.templates import generate_layout
 from sgw.renderers.rend_2d import Grid2DRenderer
 from sgw.renderers.rend_lang import GridLangRenderer
 from sgw.renderers.rend_symbolic import GridSymbolicRenderer
 from sgw.renderers.rend_ascii import GridASCIIRenderer
 from sgw.renderers.rend_3d import Grid3DRenderer
+from sgw.agent import Agent
 import matplotlib.pyplot as plt
 import copy
 
@@ -79,8 +75,8 @@ class SuperGridWorld(Env):
 
     def __init__(
         self,
-        template: LayoutTemplate = LayoutTemplate.empty,
-        size: GridSize = GridSize.small,
+        template_name: str = "empty",
+        grid_size: int = 11,
         obs_type: ObservationType = ObservationType.visual,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
@@ -97,7 +93,7 @@ class SuperGridWorld(Env):
         )
 
         # Setup grid and walls
-        self._init_grid(template, size)
+        self._init_grid(template_name, grid_size)
 
         # Setup action and observation spaces
         self.set_action_space(control_type)
@@ -111,62 +107,53 @@ class SuperGridWorld(Env):
         self.manual_collect = manual_collect
         self.add_outer_walls = add_outer_walls
         self.vision_range = vision_range
-        self.agent_pos = [0, 0]
+        self.agent = None  # Will be initialized in reset
         self.direction_map = np.array(
             [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
         )
 
     def _init_grid(self, template, size):
-        walls, self.agent_start_pos, self.template_objects = generate_layout(
-            template, size
+        self.agent_start_pos, self.template_objects = generate_layout(
+            template, size, self.add_outer_walls
         )
-        if self.add_outer_walls:
-            walls = add_outer(walls, size.value)
-        self.grid_size = size.value
-        self.base_objects = {
-            "rewards": {},
-            "markers": {},
-            "keys": [],
-            "doors": {},
-            "warps": {},
-            "other": {},
-            "walls": walls,
-        }
+        self.grid_size = size
 
     def _init_renderers(self, resolution, torch_obs):
         """Initialize renderers based on observation type."""
-        if self.obs_type == ObservationType.visual:
-            self.renderer = Grid2DRenderer(
+        renderer_map = {
+            ObservationType.visual: lambda: Grid2DRenderer(
                 self.grid_size, resolution=resolution, torch_obs=torch_obs
-            )
-        elif self.obs_type == ObservationType.visual_window:
-            self.renderer = Grid2DRenderer(
+            ),
+            ObservationType.visual_window: lambda: Grid2DRenderer(
                 self.grid_size,
                 window_size=2,
                 resolution=resolution,
                 torch_obs=torch_obs,
-            )
-        elif self.obs_type == ObservationType.visual_window_tight:
-            self.renderer = Grid2DRenderer(
+            ),
+            ObservationType.visual_window_tight: lambda: Grid2DRenderer(
                 self.grid_size,
                 window_size=1,
                 resolution=resolution,
                 torch_obs=torch_obs,
-            )
-        elif self.obs_type == ObservationType.symbolic:
-            self.renderer = GridSymbolicRenderer(self.grid_size)
-        elif self.obs_type == ObservationType.symbolic_window:
-            self.renderer = GridSymbolicRenderer(self.grid_size, window_size=5)
-        elif self.obs_type == ObservationType.symbolic_window_tight:
-            self.renderer = GridSymbolicRenderer(self.grid_size, window_size=3)
-        elif self.obs_type == ObservationType.rendered_3d:
-            self.renderer = Grid3DRenderer(resolution)
-        elif self.obs_type == ObservationType.ascii:
-            self.renderer = GridASCIIRenderer(self.grid_size)
-        elif self.obs_type == ObservationType.language:
-            self.renderer = GridLangRenderer(self.grid_size)
-        else:
+            ),
+            ObservationType.symbolic: lambda: GridSymbolicRenderer(self.grid_size),
+            ObservationType.symbolic_window: lambda: GridSymbolicRenderer(
+                self.grid_size, window_size=5
+            ),
+            ObservationType.symbolic_window_tight: lambda: GridSymbolicRenderer(
+                self.grid_size, window_size=3
+            ),
+            ObservationType.rendered_3d: lambda: Grid3DRenderer(
+                resolution=resolution, torch_obs=torch_obs
+            ),
+            ObservationType.ascii: lambda: GridASCIIRenderer(self.grid_size),
+            ObservationType.language: lambda: GridLangRenderer(self.grid_size),
+        }
+
+        if self.obs_type not in renderer_map:
             raise ValueError("No valid ObservationType provided.")
+
+        self.renderer = renderer_map[self.obs_type]()
 
     def set_action_space(self, control_type):
         self.control_type = control_type
@@ -236,7 +223,7 @@ class SuperGridWorld(Env):
         # Handle objects setup
         self.objects = self._setup_objects(objects)
 
-        self.free_spots = self.make_free_spots(self.base_objects["walls"])
+        self.free_spots = self.make_free_spots(self.objects["walls"])
 
         # Set agent position
         self.agent_pos = self._setup_agent(agent_pos, random_start)
@@ -254,9 +241,6 @@ class SuperGridWorld(Env):
         """Helper method to reset all state variables."""
         self.done = False
         self.episode_time = 0
-        self.orientation = 0
-        self.looking = 0
-        self.keys = 0
         self.time_penalty = time_penalty
         self.max_episode_time = episode_length
         self.terminate_on_reward = terminate_on_reward
@@ -266,33 +250,29 @@ class SuperGridWorld(Env):
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
         """Helper method to set up environment objects."""
-        base_object = copy.deepcopy(self.base_objects)
         use_objects = copy.deepcopy(
             objects if objects is not None else self.template_objects
         )
 
-        for key in use_objects:
-            if key in base_object:
-                base_object[key] = use_objects[key]
-        if self.add_outer_walls:
-            base_object["walls"] = add_outer(base_object["walls"], self.grid_size)
-        return base_object
+        return use_objects
 
     def _setup_agent(self, agent_pos: list = None, random_start: bool = False) -> list:
         """Helper method to determine the agent's starting position."""
-        if random_start:
-            return self.get_free_spot()
-        return agent_pos if agent_pos is not None else self.agent_start_pos
-
-    def get_free_spot(self):
-        return random.choice(self.free_spots)
+        pos = (
+            random.choice(self.free_spots)
+            if random_start
+            else (agent_pos if agent_pos is not None else self.agent_start_pos)
+        )
+        self.agent = Agent(pos)
+        return pos
 
     def make_free_spots(self, walls: list):
+        wall_positions = [wall.pos for wall in walls]
         return [
             [i, j]
             for i in range(self.grid_size)
             for j in range(self.grid_size)
-            if [i, j] not in walls
+            if [i, j] not in wall_positions
         ]
 
     def render(self, provide=False, mode="human"):
@@ -308,40 +288,38 @@ class SuperGridWorld(Env):
         """
         Moves the agent in the given direction.
         """
-        new_pos = np.array(self.agent_pos) + direction
+        new_pos = np.array(self.agent.pos) + direction
         if self.check_target(new_pos):
-            self.agent_pos = list(new_pos)
+            self.agent.move(direction)
 
     def check_target(self, target: list):
         """
         Checks if the target is a valid (movable) position.
         Returns True if the target is valid, False otherwise.
         """
-        target_tuple = tuple(target)
-        target_list = list(target_tuple)
         x_check = -1 < target[0] < self.grid_size
         y_check = -1 < target[1] < self.grid_size
 
         if not (x_check and y_check):
             return False
 
-        if target_list in self.objects["walls"]:
+        # Convert numpy array to list for comparison
+        target = list(map(int, target))
+
+        # Check walls
+        if any(wall == target for wall in self.objects["walls"]):
             return False
 
-        if target_tuple in self.objects["doors"]:
-            if self.keys > 0:
-                self.objects["doors"].pop(target_tuple)
-                self.keys -= 1
+        # Check doors
+        door = next((door for door in self.objects["doors"] if door == target), None)
+        if door:
+            if self.agent.keys > 0:
+                self.objects["doors"].remove(door)
+                self.agent.use_key()
             else:
                 return False
 
         return True
-
-    def rotate(self, direction: int):
-        """
-        Rotates the agent orientation in the given direction.
-        """
-        self.orientation = (self.orientation + direction) % 4
 
     def step(self, action: int):
         """Steps the environment forward given an action."""
@@ -354,7 +332,6 @@ class SuperGridWorld(Env):
             action = self.rng.randint(0, self.action_space.n)
 
         # Process action and determine if collection is allowed
-
         self._process_action(action)
 
         # Update state and calculate reward
@@ -378,18 +355,11 @@ class SuperGridWorld(Env):
         chosen_action = self.action_list[action]
         if self.control_type == ControlType.egocentric:
             if chosen_action == Action.ROTATE_LEFT:
-                self.rotate(-1)
+                self.agent.rotate(-1)
             elif chosen_action == Action.ROTATE_RIGHT:
-                self.rotate(1)
+                self.agent.rotate(1)
             elif chosen_action == Action.MOVE_FORWARD:
-                self.move_agent(self.direction_map[self.orientation])
-            # No additional operation is needed for NOOP or COLLECT.
-            if chosen_action in (
-                Action.ROTATE_LEFT,
-                Action.ROTATE_RIGHT,
-                Action.MOVE_FORWARD,
-            ):
-                self.looking = self.orientation
+                self.move_agent(self.direction_map[self.agent.orientation])
         else:  # allocentric orientation
             if chosen_action in (
                 Action.MOVE_UP,
@@ -404,39 +374,46 @@ class SuperGridWorld(Env):
                     Action.MOVE_LEFT: 3,
                 }
                 direction_idx = allocentric_mapping[chosen_action]
-                self.looking = direction_idx
+                self.agent.looking = direction_idx
                 self.move_agent(self.direction_map[direction_idx])
-        # For NOOP or COLLECT the environment does not change the agent's position.
 
     def _calculate_reward(self, action: int) -> float:
         """Calculate reward based on action and current state."""
         reward = self.time_penalty if action != 4 else 0
-        eval_pos = tuple(self.agent_pos)
+        agent_pos = self.agent.get_position()
 
-        if eval_pos in self.objects["rewards"] and self._determine_can_collect(action):
-            reward_info = self.objects["rewards"][eval_pos]
-            reward += self._process_reward(reward_info)
+        # Find reward at agent position
+        reward_obj = next((r for r in self.objects["rewards"] if r == agent_pos), None)
+        if reward_obj and self._determine_can_collect(action):
+            if isinstance(reward_obj.value, list):
+                self.done = reward_obj.value[2]
+                reward += reward_obj.value[0]
+            else:
+                self.done = self.terminate_on_reward
+                reward += reward_obj.value
+            self.objects["rewards"].remove(reward_obj)
 
         return reward
 
-    def _process_reward(self, reward_info) -> float:
-        if isinstance(reward_info, list):
-            self.done = reward_info[2]
-            return reward_info[0]
-        self.done = self.terminate_on_reward
-        return reward_info
-
     def _process_special_tiles(self):
-        eval_pos = tuple(self.agent_pos)
-        if eval_pos in self.objects["other"]:
-            self.objects["other"].pop(eval_pos)
+        """Process special tiles like keys, warps, and other objects."""
+        agent_pos = self.agent.get_position()
 
-        if eval_pos in self.objects["keys"]:
-            self.keys += 1
-            self.objects["keys"].remove(eval_pos)
+        # Process other objects
+        other_obj = next((o for o in self.objects["other"] if o == agent_pos), None)
+        if other_obj:
+            self.objects["other"].remove(other_obj)
 
-        if eval_pos in self.objects["warps"]:
-            self.agent_pos = self.objects["warps"][eval_pos]
+        # Process keys
+        key_obj = next((k for k in self.objects["keys"] if k == agent_pos), None)
+        if key_obj:
+            self.agent.collect_key()
+            self.objects["keys"].remove(key_obj)
+
+        # Process warps
+        warp_obj = next((w for w in self.objects["warps"] if w == agent_pos), None)
+        if warp_obj:
+            self.agent.teleport(warp_obj.target)
 
     def close(self) -> None:
         if self.obs_type == ObservationType.rendered_3d:

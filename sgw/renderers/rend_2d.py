@@ -5,6 +5,7 @@ from typing import Tuple, List, Dict, Any
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
 from gym import spaces
+from sgw.object import Wall, Reward, Marker, Key, Door, Warp, Other
 
 
 class Grid2DRenderer(RendererInterface):
@@ -103,8 +104,9 @@ class Grid2DRenderer(RendererInterface):
         )
         return img
 
-    def render_walls(self, img: np.ndarray, walls: List[Tuple[int, int]]) -> np.ndarray:
-        for y, x in walls:
+    def render_walls(self, img: np.ndarray, walls: List[Wall]) -> np.ndarray:
+        for wall in walls:
+            y, x = wall.pos
             start, end = self.get_square_edges(x, y)
             cv.rectangle(img, start, end, self.WALL_COLOR_INNER, -1)
             cv.rectangle(img, start, end, self.WALL_COLOR_OUTER, self.block_border - 1)
@@ -113,15 +115,15 @@ class Grid2DRenderer(RendererInterface):
     def render_rewards(
         self,
         img: np.ndarray,
-        rewards: Dict[Tuple[int, int], Any],
+        rewards: List[Reward],
         terminate_on_reward: bool,
     ) -> None:
-        for pos, reward in rewards.items():
+        for reward in rewards:
             draw, factor, reward_value = self._process_reward(
-                reward, terminate_on_reward
+                reward.value, terminate_on_reward
             )
             if draw:
-                self._draw_reward(img, pos, factor, reward_value)
+                self._draw_reward(img, reward.pos, factor, reward_value)
 
     def _draw_reward(
         self, img: np.ndarray, pos: Tuple[int, int], factor: float, reward_value: float
@@ -161,18 +163,18 @@ class Grid2DRenderer(RendererInterface):
     def render_markers(
         self,
         img: np.ndarray,
-        markers: Dict[Tuple[int, int], Tuple[float, float, float]],
+        markers: List[Marker],
     ) -> None:
-        for pos, marker_col in markers.items():
-            fill_color = tuple(int(np.clip(c, 0, 1) * 255) for c in marker_col)
-            start, end = self.get_square_edges(pos[1], pos[0])
+        for marker in markers:
+            fill_color = tuple(int(np.clip(c, 0, 1) * 255) for c in marker.color)
+            start, end = self.get_square_edges(marker.pos[1], marker.pos[0])
             cv.rectangle(img, start, end, fill_color, -1)
 
-    def render_keys(self, img: np.ndarray, keys: List[Tuple[int, int]]) -> None:
+    def render_keys(self, img: np.ndarray, keys: List[Key]) -> None:
         for key in keys:
             center = (
-                key[1] * self.block_size + self.block_size // 2,
-                key[0] * self.block_size + self.block_size // 2,
+                key.pos[1] * self.block_size + self.block_size // 2,
+                key.pos[0] * self.block_size + self.block_size // 2,
             )
             pts = np.array(
                 [
@@ -186,13 +188,13 @@ class Grid2DRenderer(RendererInterface):
             cv.fillPoly(img, [pts], self.KEY_FILL)
             cv.polylines(img, [pts], True, self.KEY_BORDER, 1)
 
-    def render_doors(self, img: np.ndarray, doors: Dict[Tuple[int, int], str]) -> None:
-        for pos, dir in doors.items():
-            start, end = self.get_square_edges(pos[1], pos[0])
-            if dir == "h":
+    def render_doors(self, img: np.ndarray, doors: List) -> None:
+        for door in doors:
+            start, end = self.get_square_edges(door.pos[1], door.pos[0])
+            if door.orientation == "h":
                 start = (start[0] - 2, start[1] + 5)
                 end = (end[0] + 2, end[1] - 5)
-            elif dir == "v":
+            elif door.orientation == "v":
                 start = (start[0] + 5, start[1] - 2)
                 end = (end[0] - 5, end[1] + 2)
             else:
@@ -200,12 +202,12 @@ class Grid2DRenderer(RendererInterface):
             cv.rectangle(img, start, end, self.DOOR_FILL, -1)
             cv.rectangle(img, start, end, self.DOOR_BORDER, self.block_border - 1)
 
-    def render_warps(self, img: np.ndarray, warps: Dict[Tuple[int, int], Any]) -> None:
-        for pos in warps.keys():
+    def render_warps(self, img: np.ndarray, warps: List) -> None:
+        for warp in warps:
             # Calculate center of the grid cell
             center = (
-                pos[1] * self.block_size + self.block_size // 2,
-                pos[0] * self.block_size + self.block_size // 2,
+                warp.pos[1] * self.block_size + self.block_size // 2,
+                warp.pos[0] * self.block_size + self.block_size // 2,
             )
             radius = self.block_size // 4  # Adjust size as needed
             cv.circle(img, center, radius, self.WARP_FILL, -1)
@@ -245,8 +247,8 @@ class Grid2DRenderer(RendererInterface):
         else:
             img = self.cached_image.copy()
 
-        self.render_agent(img, env.agent_pos, env.looking)
-        return resize_obs(img, env.resolution, env.torch_obs)
+        self.render_agent(img, env.agent.pos, env.agent.looking)
+        return resize_obs(img, self.resolution, self.torch_obs)
 
     def _should_update_cache(self, env: Any) -> bool:
         objects_changed = self.cached_objects != env.objects
@@ -281,7 +283,7 @@ class Grid2DRenderer(RendererInterface):
             self.block_size : -self.block_size, self.block_size : -self.block_size
         ] = base_image
 
-        x, y = env.agent_pos
+        x, y = env.agent.pos
         window = template[
             self.block_size * (x - w_size + 1) : self.block_size * (x + w_size + 2),
             self.block_size * (y - w_size + 1) : self.block_size * (y + w_size + 2),
@@ -299,14 +301,14 @@ class Grid2DRenderer(RendererInterface):
             plt.show()
         return img
 
-    def render_other(self, img: np.ndarray, others: Dict[Tuple[int, int], str]) -> None:
-        for pos, name in others.items():
+    def render_other(self, img: np.ndarray, others: List[Other]) -> None:
+        for other in others:
             center = (
-                pos[1] * self.block_size + self.block_size // 2,
-                pos[0] * self.block_size + self.block_size // 2,
+                other.pos[1] * self.block_size + self.block_size // 2,
+                other.pos[0] * self.block_size + self.block_size // 2,
             )
 
-            letter = name[0].upper()
+            letter = other.name[0].upper()
 
             font = cv.FONT_HERSHEY_SIMPLEX
             font_scale = 0.75
