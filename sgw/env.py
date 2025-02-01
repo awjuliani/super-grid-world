@@ -307,14 +307,13 @@ class SuperGridWorld(Env):
             action = self.rng.randint(0, self.action_space.n)
 
         # Process action and determine if collection is allowed
-        self._process_action(action)
+        self._move_agent(action)
 
-        # Update state and calculate reward
+        # Process object interactions and determine reward
+        reward = self._object_interactions(action)
+
+        # Update time
         self.episode_time += 1
-        reward = self._calculate_reward(action)
-
-        # Process special tiles
-        self._process_special_tiles()
 
         return self.observation, reward, self.done, {}
 
@@ -325,8 +324,9 @@ class SuperGridWorld(Env):
         chosen_action = self.valid_actions[action]
         return chosen_action == Action.COLLECT
 
-    def _process_action(self, action: int):
+    def _move_agent(self, action: int):
         """Process the action and move the agent if applicable."""
+        # Process action
         chosen_action = self.valid_actions[action]
         direction = self.agent.process_action(chosen_action, self.control_type)
         if direction is not None and self.check_target(
@@ -334,23 +334,17 @@ class SuperGridWorld(Env):
         ):
             self.agent.move(direction)
 
-    def _calculate_reward(self, action: int) -> float:
-        """Calculate reward based on action and current state."""
-        reward = self.time_penalty
+    def _object_interactions(self, action: int):
+        """Process special tiles like keys, warps, and other objects."""
         agent_pos = self.agent.get_position()
 
         # Find reward at agent position
+        reward = self.time_penalty
         reward_obj = next((r for r in self.objects["rewards"] if r == agent_pos), None)
         if reward_obj and self._determine_can_collect(action):
             self.done = self.terminate_on_reward
             reward += reward_obj.value
             self.objects["rewards"].remove(reward_obj)
-
-        return reward
-
-    def _process_special_tiles(self):
-        """Process special tiles like keys, warps, and other objects."""
-        agent_pos = self.agent.get_position()
 
         # Process other objects
         other_obj = next((o for o in self.objects["other"] if o == agent_pos), None)
@@ -367,6 +361,8 @@ class SuperGridWorld(Env):
         warp_obj = next((w for w in self.objects["warps"] if w == agent_pos), None)
         if warp_obj:
             self.agent.teleport(warp_obj.target)
+
+        return reward
 
     def close(self) -> None:
         self.renderer.close()
