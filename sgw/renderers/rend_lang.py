@@ -7,12 +7,6 @@ from gym import spaces
 class GridLangRenderer(RendererInterface):
     def __init__(self, grid_size: int):
         self.grid_size = grid_size
-        self.reward_types = {True: "gem", False: "lava"}
-        self.obj_name_mapping = {
-            "keys": "door key",
-            "doors": "locked door",
-            "warps": "warp pad",
-        }
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -53,38 +47,19 @@ class GridLangRenderer(RendererInterface):
     def _get_object_descriptions(
         self,
         objects,
-        obj_type,
         agent_pos,
         field_of_view,
-        reward_val=None,
         pronouns=None,
     ):
         """Unified helper method to generate descriptions for any type of object."""
         descriptions = []
-        pos_type_pairs = []
+        pos_type_pairs = [(obj.pos, obj.name) for obj in objects]
 
-        if obj_type == "wall":
-            pos_type_pairs = [(obj.pos, "wall") for obj in objects]
-        elif reward_val is not None:
-            # Handle rewards
-            pos_type_pairs = [
-                (
-                    obj.pos,
-                    self.reward_types[
-                        obj.value[0] if isinstance(obj.value, list) else obj.value > 0
-                    ],
-                )
-                for obj in objects
-            ]
-        elif obj_type == "other":
-            pos_type_pairs = [(obj.pos, obj.name) for obj in objects]
-        else:
-            pos_type_pairs = [(obj.pos, obj_type) for obj in objects]
-
+        first_person = pronouns["subject"] == "you"
         for pos, item_type in pos_type_pairs:
             direction, distance = self._get_direction_and_distance(pos, agent_pos)
-            # Skip objects beyond field of view
-            if distance > field_of_view:
+            # Skip objects beyond field of view only in first person mode
+            if first_person and distance > field_of_view:
                 continue
             descriptions.append(
                 f"There is a {item_type} at {pronouns['possessive']} position."
@@ -148,58 +123,37 @@ class GridLangRenderer(RendererInterface):
         }
 
         agent_pos = np.array(env.agent.pos)
+        # Create inventory description
+        if env.agent.inventory:
+            inventory_items = {}
+            for item in env.agent.inventory:
+                inventory_items[item.name] = inventory_items.get(item.name, 0) + 1
+            inventory_desc = ", ".join(
+                f"{count} {name}" + ("s" if count > 1 else "")
+                for name, count in inventory_items.items()
+            )
+            inventory_text = f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {inventory_desc}."
+        else:
+            inventory_text = f"{pronouns['subject'].capitalize()} {pronouns['be']} not carrying anything."
+
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
-            f"\n{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.agent.keys} {'key' if env.agent.keys == 1 else 'keys'}. "
+            f"\n{inventory_text} "
             f"\n{pronouns['subject'].capitalize()} can only see objects up to {env.agent.field_of_view} {'meter' if env.agent.field_of_view == 1 else 'meters'} away."
         )
 
         # Get boundary descriptions
         all_descriptions = self._get_boundary_descriptions(agent_pos, pronouns)
 
-        # Process all object types
-        all_descriptions.extend(
-            self._get_object_descriptions(
-                env.objects["walls"],
-                "wall",
-                agent_pos,
-                env.agent.field_of_view,
-                pronouns=pronouns,
-            )
-        )
-
-        # Handle rewards
-        if env.objects["rewards"]:
+        # Process all objects in a single pass
+        all_objects = []
+        for obj_list in env.objects.values():
+            all_objects.extend(obj_list)
+        
+        if all_objects:
             all_descriptions.extend(
                 self._get_object_descriptions(
-                    env.objects["rewards"],
-                    None,
-                    agent_pos,
-                    env.agent.field_of_view,
-                    reward_val=True,
-                    pronouns=pronouns,
-                )
-            )
-
-        # Handle standard objects (keys, doors, warps)
-        for obj_type, display_name in self.obj_name_mapping.items():
-            if env.objects[obj_type]:
-                all_descriptions.extend(
-                    self._get_object_descriptions(
-                        env.objects[obj_type],
-                        display_name,
-                        agent_pos,
-                        env.agent.field_of_view,
-                        pronouns=pronouns,
-                    )
-                )
-
-        # Handle other objects
-        if "other" in env.objects and env.objects["other"]:
-            all_descriptions.extend(
-                self._get_object_descriptions(
-                    env.objects["other"],
-                    "other",
+                    all_objects,
                     agent_pos,
                     env.agent.field_of_view,
                     pronouns=pronouns,

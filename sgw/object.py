@@ -61,21 +61,21 @@ class Reward(Object):
 class Key(Object):
     def __init__(self, pos):
         super().__init__(pos, False, True)
-        self.name = "key"
+        self.name = "door key"
 
     def copy(self):
         return type(self)(list(self.pos))
 
     def interact(self, agent):
         super().interact(agent)
-        agent.collect_key()
+        agent.collect_object(self)
 
 
 class Door(Object):
     def __init__(self, pos, orientation):
         super().__init__(pos, False, True)
         self.orientation = orientation
-        self.name = "door"
+        self.name = "locked door"
 
     def copy(self):
         return type(self)(list(self.pos), self.orientation)
@@ -115,7 +115,7 @@ class Marker(Object):
 
 class Other(Object):
     def __init__(self, pos, name):
-        super().__init__(pos, False, False)
+        super().__init__(pos, False, True, False)
         self.name = name
 
     def copy(self):
@@ -123,3 +123,4 @@ class Other(Object):
 
     def interact(self, agent):
         super().interact(agent)
+        agent.collect_object(self)

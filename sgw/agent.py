@@ -1,4 +1,5 @@
 import numpy as np
+from sgw.object import Key
 
 
 class Agent:
@@ -6,7 +7,7 @@ class Agent:
         self.pos = list(map(int, pos))
         self.orientation = direction  # Current rotation (0-3)
         self.looking = direction  # Direction agent is looking
-        self.keys = 0
+        self.inventory = []
         self.reward = 0
         self.field_of_view = field_of_view
         self.done = False
@@ -71,15 +72,17 @@ class Agent:
         self.looking = direction_idx
         self.move(self.direction_map[direction_idx])
 
-    def collect_key(self):
-        """Collect a key."""
-        self.keys += 1
+    def collect_object(self, object):
+        """Collect an object."""
+        self.inventory.append(object)
 
     def use_key(self):
         """Use a key. Returns True if key was available."""
-        if self.keys > 0:
-            self.keys -= 1
-            return True
+        # check if a key object is in the inventory
+        for item in self.inventory:
+            if isinstance(item, Key):
+                self.inventory.remove(item)
+                return True
         return False
 
     def get_position(self):
