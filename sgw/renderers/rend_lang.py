@@ -55,9 +55,9 @@ class GridLangRenderer(RendererInterface):
         objects,
         obj_type,
         agent_pos,
+        field_of_view,
         reward_val=None,
         pronouns=None,
-        vision_range=None,
     ):
         """Unified helper method to generate descriptions for any type of object."""
         descriptions = []
@@ -83,13 +83,13 @@ class GridLangRenderer(RendererInterface):
 
         for pos, item_type in pos_type_pairs:
             direction, distance = self._get_direction_and_distance(pos, agent_pos)
-            # Skip objects beyond vision range if specified
-            if vision_range is not None and distance > vision_range:
+            # Skip objects beyond field of view
+            if distance > field_of_view:
                 continue
             descriptions.append(
                 f"There is a {item_type} at {pronouns['possessive']} position."
                 if direction == "same position"
-                else f"There is a {item_type} {direction} of {pronouns['subject']}, {distance} meters away."
+                else f"There is a {item_type} {direction} of {pronouns['subject']}, {distance} {'meter' if distance == 1 else 'meters'} away."
             )
 
         return descriptions
@@ -105,9 +105,14 @@ class GridLangRenderer(RendererInterface):
             if (y_dir and x_dir)
             else (y_dir or x_dir or "same position")
         )
-        distance = abs(diff[0]) + abs(diff[1]) if direction != "same position" else 0
+        # Use Euclidean distance with 0.5 unit increments
+        distance = (
+            np.floor(2 * np.sqrt(diff[0] ** 2 + diff[1] ** 2)) / 2
+            if direction != "same position"
+            else 0
+        )
 
-        return direction, round(distance, 2)
+        return direction, int(distance)
 
     def _get_boundary_descriptions(self, agent_pos, pronouns):
         """Helper method to describe adjacent outer walls."""
@@ -145,7 +150,8 @@ class GridLangRenderer(RendererInterface):
         agent_pos = np.array(env.agent.pos)
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
-            f"{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.agent.keys} {'key' if env.agent.keys == 1 else 'keys'}."
+            f"\n{pronouns['subject'].capitalize()} {pronouns['be']} carrying {env.agent.keys} {'key' if env.agent.keys == 1 else 'keys'}. "
+            f"\n{pronouns['subject'].capitalize()} can only see objects up to {env.agent.field_of_view} {'meter' if env.agent.field_of_view == 1 else 'meters'} away."
         )
 
         # Get boundary descriptions
@@ -157,8 +163,8 @@ class GridLangRenderer(RendererInterface):
                 env.objects["walls"],
                 "wall",
                 agent_pos,
+                env.agent.field_of_view,
                 pronouns=pronouns,
-                vision_range=env.vision_range if hasattr(env, "vision_range") else None,
             )
         )
 
@@ -169,11 +175,9 @@ class GridLangRenderer(RendererInterface):
                     env.objects["rewards"],
                     None,
                     agent_pos,
+                    env.agent.field_of_view,
                     reward_val=True,
                     pronouns=pronouns,
-                    vision_range=(
-                        env.vision_range if hasattr(env, "vision_range") else None
-                    ),
                 )
             )
 
@@ -185,10 +189,8 @@ class GridLangRenderer(RendererInterface):
                         env.objects[obj_type],
                         display_name,
                         agent_pos,
+                        env.agent.field_of_view,
                         pronouns=pronouns,
-                        vision_range=(
-                            env.vision_range if hasattr(env, "vision_range") else None
-                        ),
                     )
                 )
 
@@ -199,10 +201,8 @@ class GridLangRenderer(RendererInterface):
                     env.objects["other"],
                     "other",
                     agent_pos,
+                    env.agent.field_of_view,
                     pronouns=pronouns,
-                    vision_range=(
-                        env.vision_range if hasattr(env, "vision_range") else None
-                    ),
                 )
             )
 

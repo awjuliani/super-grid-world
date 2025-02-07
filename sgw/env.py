@@ -15,13 +15,11 @@ import copy
 
 
 class ObsType(enum.Enum):
-    visual = "visual"
+    visual_2d = "visual_2d"
     visual_window = "visual_window"
-    visual_window_tight = "visual_window_tight"
     symbolic = "symbolic"
     symbolic_window = "symbolic_window"
-    symbolic_window_tight = "symbolic_window_tight"
-    rendered_3d = "rendered_3d"
+    visual_3d = "visual_3d"
     ascii = "ascii"
     language = "language"
 
@@ -56,7 +54,7 @@ class SuperGridWorld(Env):
         self,
         template_name: str = "empty",
         grid_size: int = 11,
-        obs_type: ObsType = ObsType.visual,
+        obs_type: ObsType = ObsType.visual_2d,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
         use_noop: bool = False,
@@ -64,7 +62,7 @@ class SuperGridWorld(Env):
         manual_collect: bool = False,
         resolution: int = 256,
         add_outer_walls: bool = True,
-        vision_range: float = None,
+        vision_range: int = 3,
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
@@ -97,29 +95,20 @@ class SuperGridWorld(Env):
     def _init_renderers(self, resolution, torch_obs):
         """Initialize renderers based on observation type."""
         renderer_map = {
-            ObsType.visual: lambda: Grid2DRenderer(
+            ObsType.visual_2d: lambda: Grid2DRenderer(
                 self.grid_size, resolution=resolution, torch_obs=torch_obs
             ),
             ObsType.visual_window: lambda: Grid2DRenderer(
                 self.grid_size,
-                window_size=2,
-                resolution=resolution,
-                torch_obs=torch_obs,
-            ),
-            ObsType.visual_window_tight: lambda: Grid2DRenderer(
-                self.grid_size,
-                window_size=1,
+                window_size=self.vision_range,
                 resolution=resolution,
                 torch_obs=torch_obs,
             ),
             ObsType.symbolic: lambda: GridSymbolicRenderer(self.grid_size),
             ObsType.symbolic_window: lambda: GridSymbolicRenderer(
-                self.grid_size, window_size=5
+                self.grid_size, window_size=self.vision_range
             ),
-            ObsType.symbolic_window_tight: lambda: GridSymbolicRenderer(
-                self.grid_size, window_size=3
-            ),
-            ObsType.rendered_3d: lambda: Grid3DRenderer(
+            ObsType.visual_3d: lambda: Grid3DRenderer(
                 resolution=resolution, torch_obs=torch_obs
             ),
             ObsType.ascii: lambda: GridASCIIRenderer(self.grid_size),
@@ -130,6 +119,7 @@ class SuperGridWorld(Env):
             raise ValueError("No valid ObservationType provided.")
 
         self.renderer = renderer_map[self.obs_type]()
+        self.state_renderer = renderer_map[ObsType.visual_2d]()
 
     def set_action_space(self, control_type):
         self.control_type = control_type
@@ -180,7 +170,6 @@ class SuperGridWorld(Env):
         random_start: bool = False,
         time_penalty: float = 0.0,
         stochasticity: float = 0.0,
-        visible_walls: bool = True,
     ):
         """
         Resets the environment to its initial configuration.
@@ -190,7 +179,6 @@ class SuperGridWorld(Env):
             episode_length,
             time_penalty,
             stochasticity,
-            visible_walls,
         )
 
         # Handle objects setup
@@ -206,14 +194,12 @@ class SuperGridWorld(Env):
         episode_length,
         time_penalty,
         stochasticity,
-        visible_walls,
     ):
         """Helper method to reset all state variables."""
         self.episode_time = 0
         self.time_penalty = time_penalty
         self.max_episode_time = episode_length
         self.stochasticity = stochasticity
-        self.visible_walls = visible_walls
         self.cached_objects = None
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
@@ -229,7 +215,7 @@ class SuperGridWorld(Env):
             if random_start
             else (agent_pos if agent_pos is not None else self.agent_start_pos)
         )
-        self.agent = Agent(pos)
+        self.agent = Agent(pos, field_of_view=self.vision_range)
         return pos
 
     @property
@@ -246,7 +232,7 @@ class SuperGridWorld(Env):
         return [list(pos) for pos in all_positions - occupied_positions]
 
     def render(self, provide=False, mode="human"):
-        image = self.renderer.render(self)
+        image = self.state_renderer.render(self, is_state_view=True)
         if mode == "human":
             plt.imshow(image)
             plt.axis("off")

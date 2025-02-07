@@ -14,10 +14,10 @@ class GridSymbolicRenderer(RendererInterface):
         """Return the observation space for symbolic observations."""
         if self.window_size is None:
             shape = (self.grid_size, self.grid_size, 6)
-        elif self.window_size == 3:
-            shape = (3, 3, 6)
-        else:  # window_size == 5
-            shape = (5, 5, 6)
+        else:
+            # Window size is based on vision range: 2 * range + 1
+            window_dim = 2 * self.window_size + 1
+            shape = (window_dim, window_dim, 6)
         return spaces.Box(0, 1, shape=shape)
 
     def render_full(self, env: Any) -> np.ndarray:
@@ -77,28 +77,22 @@ class GridSymbolicRenderer(RendererInterface):
     def render_window(self, env: Any, size: int) -> np.ndarray:
         """
         Returns a windowed symbolic observation centered on the agent.
+        Window size is determined by vision range: 2 * range + 1
         """
-        if size not in [3, 5]:
-            raise ValueError("Window size must be 3 or 5")
-
         obs = self.render_full(env)
-        pad_size = (size - 1) // 2
-        full_window = np.pad(
-            obs,
-            ((pad_size, pad_size), (pad_size, pad_size), (0, 0)),
-            mode="constant",
-            constant_values=0,
-        )
-        full_window[:, :, 4] = np.where(
-            full_window[:, :, 4] == 0, 1, full_window[:, :, 4]
-        )
+        window_dim = 2 * size + 1
+        pad_size = size
 
-        window = full_window[
-            env.agent.pos[0] : env.agent.pos[0] + size,
-            env.agent.pos[1] : env.agent.pos[1] + size,
-            :,
-        ]
+        # Pad the observation with walls (1s in channel 4)
+        padded = np.zeros(
+            (obs.shape[0] + 2 * pad_size, obs.shape[1] + 2 * pad_size, obs.shape[2])
+        )
+        padded[pad_size:-pad_size, pad_size:-pad_size] = obs
+        padded[:, :, 4] = np.where(padded[:, :, 4] == 0, 1, padded[:, :, 4])
 
+        # Extract window centered on agent
+        x, y = env.agent.pos
+        window = padded[x : x + window_dim, y : y + window_dim, :]
         return window
 
     def render(self, env: Any, **kwargs) -> np.ndarray:

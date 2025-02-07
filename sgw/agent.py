@@ -2,12 +2,13 @@ import numpy as np
 
 
 class Agent:
-    def __init__(self, pos, direction=0):
+    def __init__(self, pos, direction=0, field_of_view=2):
         self.pos = list(map(int, pos))
         self.orientation = direction  # Current rotation (0-3)
         self.looking = direction  # Direction agent is looking
         self.keys = 0
         self.reward = 0
+        self.field_of_view = field_of_view
         self.done = False
         self.direction_map = np.array(
             [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
