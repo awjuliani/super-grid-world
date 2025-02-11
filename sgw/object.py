@@ -131,7 +131,7 @@ class Other(Object):
 
 
 class Tree(Object):
-    def __init__(self, pos, spawn_rate=0.33, spawn_radius=2):
+    def __init__(self, pos, spawn_rate=0.5, spawn_radius=2):
         super().__init__(pos, True, False, False)
         self.name = "tree"
         self.spawn_rate = spawn_rate
@@ -166,6 +166,7 @@ class Tree(Object):
                 if "fruits" not in env.objects:
                     env.objects["fruits"] = []
                 env.objects["fruits"].append(new_fruit)
+                env.events.append("A fruit fell from a tree")
 
 
 class Fruit(Object):

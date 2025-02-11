@@ -207,6 +207,7 @@ class SuperGridWorld(Env):
         self.max_episode_time = episode_length
         self.stochasticity = stochasticity
         self.cached_objects = None
+        self.events = []  # Initialize empty events list
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
         """Helper method to set up environment objects."""
@@ -306,6 +307,7 @@ class SuperGridWorld(Env):
 
         rewards = []
         dones = []
+        self.events = []  # Reset events list at start of step
 
         # Process each agent's action
         for i, action in enumerate(actions):
@@ -330,7 +332,7 @@ class SuperGridWorld(Env):
         # Update time
         self.episode_time += 1
 
-        return self.observation, rewards, dones, {}
+        return self.observation, rewards, dones, {"events": self.events}
 
     def _determine_can_collect(self, action: int) -> bool:
         """Determines if collection is allowed based on action and manual_collect setting."""
