@@ -28,8 +28,10 @@ class Object:
         )
 
     def interact(self, agent):
+        """Called when agent interacts with object. Returns event string if any."""
         if self.terminal:
             agent.done = True
+        return None
 
     def step(self, env):
         """Called each step of the environment. Can be used to update object state."""
@@ -46,6 +48,7 @@ class Wall(Object):
 
     def interact(self, agent):
         super().interact(agent)
+        return None
 
 
 class Reward(Object):
@@ -60,6 +63,7 @@ class Reward(Object):
     def interact(self, agent):
         super().interact(agent)
         agent.collect_reward(self.value)
+        return f"Agent collected reward of {self.value}"
 
 
 class Key(Object):
@@ -73,6 +77,7 @@ class Key(Object):
     def interact(self, agent):
         super().interact(agent)
         agent.collect_object(self)
+        return "Agent collected a key"
 
 
 class Door(Object):
@@ -88,6 +93,8 @@ class Door(Object):
         super().interact(agent)
         if agent.use_key():
             agent.teleport(self.pos)
+            return "Agent unlocked and went through a door"
+        return "Agent tried to open door but had no key"
 
 
 class Warp(Object):
@@ -102,6 +109,7 @@ class Warp(Object):
     def interact(self, agent):
         super().interact(agent)
         agent.teleport(self.target)
+        return "Agent used a warp pad to teleport"
 
 
 class Marker(Object):
@@ -115,6 +123,7 @@ class Marker(Object):
 
     def interact(self, agent):
         super().interact(agent)
+        return None
 
 
 class Other(Object):
@@ -128,6 +137,7 @@ class Other(Object):
     def interact(self, agent):
         super().interact(agent)
         agent.collect_object(self)
+        return f"Agent collected {self.name}"
 
 
 class Tree(Object):
@@ -142,6 +152,7 @@ class Tree(Object):
 
     def interact(self, agent):
         super().interact(agent)
+        return None
 
     def step(self, env):
         """Potentially spawn a fruit in a nearby location."""
@@ -166,7 +177,8 @@ class Tree(Object):
                 if "fruits" not in env.objects:
                     env.objects["fruits"] = []
                 env.objects["fruits"].append(new_fruit)
-                env.events.append("A fruit fell from a tree")
+                return "A fruit fell from a tree"
+        return None
 
 
 class Fruit(Object):
@@ -180,3 +192,4 @@ class Fruit(Object):
     def interact(self, agent):
         super().interact(agent)
         agent.collect_object(self)
+        return "Agent collected a fruit"

@@ -327,7 +327,9 @@ class SuperGridWorld(Env):
         # Update all objects
         for obj_type in self.objects.values():
             for obj in obj_type:
-                obj.step(self)
+                event = obj.step(self)
+                if event:
+                    self.events.append(event)
 
         # Update time
         self.episode_time += 1
@@ -359,8 +361,10 @@ class SuperGridWorld(Env):
         for obj_type in self.objects.values():
             obj = next((o for o in obj_type if o == agent_pos), None)
             if obj and self._determine_can_collect(action):
-                # Interact with the object
-                obj.interact(agent)
+                # Interact with the object and handle any events
+                event = obj.interact(agent)
+                if event:
+                    self.events.append(event)
                 # Remove object if specified
                 if obj.consumable:
                     obj_type.remove(obj)
