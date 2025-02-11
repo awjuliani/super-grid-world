@@ -31,6 +31,10 @@ class Object:
         if self.terminal:
             agent.done = True
 
+    def step(self, env):
+        """Called each step of the environment. Can be used to update object state."""
+        pass
+
 
 class Wall(Object):
     def __init__(self, pos):
@@ -120,6 +124,57 @@ class Other(Object):
 
     def copy(self):
         return type(self)(list(self.pos), self.name)
+
+    def interact(self, agent):
+        super().interact(agent)
+        agent.collect_object(self)
+
+
+class Tree(Object):
+    def __init__(self, pos, spawn_rate=0.33, spawn_radius=2):
+        super().__init__(pos, True, False, False)
+        self.name = "tree"
+        self.spawn_rate = spawn_rate
+        self.spawn_radius = spawn_radius
+
+    def copy(self):
+        return type(self)(list(self.pos), self.spawn_rate, self.spawn_radius)
+
+    def interact(self, agent):
+        super().interact(agent)
+
+    def step(self, env):
+        """Potentially spawn a fruit in a nearby location."""
+        super().step(env)
+
+        # Random chance to spawn fruit
+        if env.rng.random() < self.spawn_rate:
+            # Get possible spawn positions in radius
+            possible_positions = []
+            for dx in range(-self.spawn_radius, self.spawn_radius + 1):
+                for dy in range(-self.spawn_radius, self.spawn_radius + 1):
+                    new_pos = [self.pos[0] + dx, self.pos[1] + dy]
+                    # Check if position is valid and empty
+                    if env.check_target(new_pos):
+                        possible_positions.append(new_pos)
+
+            # Spawn fruit at random valid position if any exist
+            if possible_positions:
+                spawn_idx = env.rng.choice(len(possible_positions))
+                spawn_pos = possible_positions[spawn_idx]
+                new_fruit = Fruit(spawn_pos)
+                if "fruits" not in env.objects:
+                    env.objects["fruits"] = []
+                env.objects["fruits"].append(new_fruit)
+
+
+class Fruit(Object):
+    def __init__(self, pos):
+        super().__init__(pos, False, True, False)
+        self.name = "fruit"
+
+    def copy(self):
+        return type(self)(list(self.pos))
 
     def interact(self, agent):
         super().interact(agent)

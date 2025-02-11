@@ -63,10 +63,11 @@ class SuperGridWorld(Env):
         resolution: int = 256,
         add_outer_walls: bool = True,
         vision_range: int = 3,
+        num_agents: int = 1,  # New parameter for number of agents
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
-            seed, use_noop, manual_collect, add_outer_walls, vision_range
+            seed, use_noop, manual_collect, add_outer_walls, vision_range, num_agents
         )
 
         # Setup grid and walls
@@ -77,14 +78,15 @@ class SuperGridWorld(Env):
         self.set_obs_space(obs_type, torch_obs, resolution)
 
     def _init_basic_attrs(
-        self, seed, use_noop, manual_collect, add_outer_walls, vision_range
+        self, seed, use_noop, manual_collect, add_outer_walls, vision_range, num_agents
     ):
         self.rng = np.random.RandomState(seed)
         self.use_noop = use_noop
         self.manual_collect = manual_collect
         self.add_outer_walls = add_outer_walls
         self.vision_range = vision_range
-        self.agent = None  # Will be initialized in reset
+        self.num_agents = num_agents
+        self.agents = [None] * num_agents  # List to store multiple agents
 
     def _init_grid(self, template, size):
         self.agent_start_pos, self.template_objects = generate_layout(
@@ -144,7 +146,10 @@ class SuperGridWorld(Env):
             self.valid_actions.append(Action.NOOP)
         if self.manual_collect:
             self.valid_actions.append(Action.COLLECT)
-        self.action_space = spaces.Discrete(len(self.valid_actions))
+        # Create action space for each agent
+        self.action_space = spaces.Tuple(
+            [spaces.Discrete(len(self.valid_actions))] * self.num_agents
+        )
 
     def set_obs_space(self, obs_type, torch_obs, resolution):
         if isinstance(obs_type, str):
@@ -154,18 +159,19 @@ class SuperGridWorld(Env):
         # Initialize the appropriate renderer
         self._init_renderers(resolution, torch_obs)
 
-        # Get the observation space from the renderer
-        self.obs_space = self.renderer.observation_space
+        # Create observation space for each agent
+        single_obs_space = self.renderer.observation_space
+        self.observation_space = spaces.Tuple([single_obs_space] * self.num_agents)
 
     @property
     def observation(self):
-        """Get the current observation from the environment."""
-        return self.renderer.render(self)
+        """Get the current observation from the environment for all agents."""
+        return [self.renderer.render(self, agent_idx=i) for i in range(self.num_agents)]
 
     def reset(
         self,
         objects: Dict = None,
-        agent_pos: list = None,
+        agent_positions: list = None,
         episode_length: int = 100,
         random_start: bool = False,
         time_penalty: float = 0.0,
@@ -184,8 +190,8 @@ class SuperGridWorld(Env):
         # Handle objects setup
         self._setup_objects(objects)
 
-        # Set agent position
-        self._setup_agent(agent_pos, random_start)
+        # Set agent positions
+        self._setup_agents(agent_positions, random_start)
 
         return self.observation
 
@@ -208,15 +214,29 @@ class SuperGridWorld(Env):
             objects if objects is not None else self.template_objects
         )
 
-    def _setup_agent(self, agent_pos: list = None, random_start: bool = False) -> list:
-        """Helper method to determine the agent's starting position."""
-        pos = (
-            random.choice(self.free_spots)
-            if random_start
-            else (agent_pos if agent_pos is not None else self.agent_start_pos)
-        )
-        self.agent = Agent(pos, field_of_view=self.vision_range)
-        return pos
+    def _setup_agents(self, agent_positions: list = None, random_start: bool = False):
+        """Helper method to determine the agents' starting positions."""
+        if agent_positions is None:
+            agent_positions = [None] * self.num_agents
+        elif len(agent_positions) != self.num_agents:
+            raise ValueError(
+                f"Expected {self.num_agents} agent positions, got {len(agent_positions)}"
+            )
+
+        free_spots = self.free_spots
+        for i in range(self.num_agents):
+            if random_start:
+                if not free_spots:
+                    raise ValueError("Not enough free spots for all agents")
+                pos = random.choice(free_spots)
+                free_spots.remove(pos)
+            else:
+                pos = (
+                    agent_positions[i]
+                    if agent_positions[i] is not None
+                    else self.agent_start_pos
+                )
+            self.agents[i] = Agent(pos, field_of_view=self.vision_range)
 
     @property
     def free_spots(self):
@@ -268,28 +288,49 @@ class SuperGridWorld(Env):
             if obj and obj.obstacle:
                 return False
 
+        # Check if any other agent is at the target position
+        for agent in self.agents:
+            if agent is not None and agent.get_position() == target:
+                return False
+
         return True
 
-    def step(self, action: int):
-        """Steps the environment forward given an action."""
-        if self.agent.done:
+    def step(self, actions):
+        """Steps the environment forward given actions for all agents."""
+        if any(agent.done for agent in self.agents):
             print("Episode finished. Please reset the environment.")
             return None, None, None, None
 
-        # Handle stochastic actions
-        if self.stochasticity > self.rng.rand():
-            action = self.rng.randint(0, self.action_space.n)
+        if not isinstance(actions, (list, tuple)) or len(actions) != self.num_agents:
+            raise ValueError(f"Expected {self.num_agents} actions, got {actions}")
 
-        # Process action and determine if collection is allowed
-        self._move_agent(action)
+        rewards = []
+        dones = []
 
-        # Process object interactions
-        self._object_interactions(action)
+        # Process each agent's action
+        for i, action in enumerate(actions):
+            # Handle stochastic actions
+            if self.stochasticity > self.rng.rand():
+                action = self.rng.randint(0, len(self.valid_actions))
+
+            # Process action and determine if collection is allowed
+            self._move_agent(action, i)
+
+            # Process object interactions
+            self._object_interactions(action, i)
+
+            rewards.append(self.agents[i].reward)
+            dones.append(self.agents[i].done)
+
+        # Update all objects
+        for obj_type in self.objects.values():
+            for obj in obj_type:
+                obj.step(self)
 
         # Update time
         self.episode_time += 1
 
-        return self.observation, self.agent.reward, self.agent.done, {}
+        return self.observation, rewards, dones, {}
 
     def _determine_can_collect(self, action: int) -> bool:
         """Determines if collection is allowed based on action and manual_collect setting."""
@@ -298,27 +339,26 @@ class SuperGridWorld(Env):
         chosen_action = self.valid_actions[action]
         return chosen_action == Action.COLLECT
 
-    def _move_agent(self, action: int):
-        """Process the action and move the agent if applicable."""
-        # Process action
+    def _move_agent(self, action: int, agent_idx: int):
+        """Process the action and move the specified agent if applicable."""
         chosen_action = self.valid_actions[action]
-        direction = self.agent.process_action(chosen_action, self.control_type)
-        if direction is not None and self.check_target(
-            np.array(self.agent.pos) + direction
-        ):
-            self.agent.move(direction)
+        agent = self.agents[agent_idx]
+        direction = agent.process_action(chosen_action, self.control_type)
+        if direction is not None and self.check_target(np.array(agent.pos) + direction):
+            agent.move(direction)
 
-    def _object_interactions(self, action: int):
-        """Process interactions with objects at the agent's position."""
-        agent_pos = self.agent.get_position()
-        self.agent.reward = self.time_penalty
+    def _object_interactions(self, action: int, agent_idx: int):
+        """Process interactions with objects at the specified agent's position."""
+        agent = self.agents[agent_idx]
+        agent_pos = agent.get_position()
+        agent.reward = self.time_penalty
 
         # Check all object types for interactions
         for obj_type in self.objects.values():
             obj = next((o for o in obj_type if o == agent_pos), None)
             if obj and self._determine_can_collect(action):
                 # Interact with the object
-                obj.interact(self.agent)
+                obj.interact(agent)
                 # Remove object if specified
                 if obj.consumable:
                     obj_type.remove(obj)

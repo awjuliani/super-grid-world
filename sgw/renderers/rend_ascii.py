@@ -1,83 +1,94 @@
 import numpy as np
-from typing import Dict, List, Any
+from typing import Any, Dict
 from sgw.renderers.rend_interface import RendererInterface
 from gym import spaces
 
 
 class GridASCIIRenderer(RendererInterface):
+    # Object types and their corresponding ASCII characters
+    ASCII_MAP = {
+        "empty": " ",
+        "agent": "A",
+        "other_agents": "a",
+        "walls": "B",
+        "rewards_positive": "R",
+        "rewards_negative": "L",
+        "keys": "K",
+        "doors": "D",
+        "warps": "W",
+        "other": "O",
+        "trees": "T",
+        "fruits": "F",
+    }
+
+    # Object types and their corresponding grid values
+    GRID_VALUES = {obj_type: i for i, obj_type in enumerate(ASCII_MAP.keys())}
+
     def __init__(self, grid_size: int):
         self.grid_size = grid_size
-        self.ascii_map = {
-            0: " ",  # empty
-            1: "A",  # agent
-            2: "B",  # block/wall
-            3: "R",  # reward
-            4: "L",  # lava/negative reward
-            5: "K",  # key
-            6: "D",  # door
-            7: "W",  # warp
-            8: "O",  # other
-        }
 
     @property
     def observation_space(self) -> spaces.Space:
         """Return the observation space for ASCII observations."""
         return spaces.Discrete(1)
 
-    def make_ascii_obs(self, env: Any) -> str:
+    def make_ascii_obs(self, env: Any, agent_idx: int = 0) -> str:
         """
         Returns an ASCII string representation of the environment.
-        Legend:
-        _ = empty
-        A = agent
-        B = block/wall
-        R = reward
-        L = lava/negative reward
-        K = key
-        D = door
-        W = warp
-        O = other
+        Each object type is represented by a unique ASCII character as defined in ASCII_MAP.
         """
-        grid = np.zeros((self.grid_size, self.grid_size))
+        grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
 
-        # Set agent position
-        grid[env.agent.pos[0], env.agent.pos[1]] = 1
+        # Set agents' positions
+        for i, agent in enumerate(env.agents):
+            grid[agent.pos[0], agent.pos[1]] = (
+                self.GRID_VALUES["agent"]
+                if i == agent_idx
+                else self.GRID_VALUES["other_agents"]
+            )
 
-        # Set walls
-        for wall in env.objects["walls"]:
-            grid[wall.pos[0], wall.pos[1]] = 2
-
-        # Set rewards
-        for reward in env.objects["rewards"]:
-            value = reward.value
-            if isinstance(value, list):
-                value = value[0]
-            if value > 0:
-                grid[reward.pos[0], reward.pos[1]] = 3
-            else:
-                grid[reward.pos[0], reward.pos[1]] = 4
-
-        # Set keys
-        for key in env.objects["keys"]:
-            grid[key.pos[0], key.pos[1]] = 5
-
-        # Set doors
-        for door in env.objects["doors"]:
-            grid[door.pos[0], door.pos[1]] = 6
-
-        # Set warps
-        for warp in env.objects["warps"]:
-            grid[warp.pos[0], warp.pos[1]] = 7
-
-        # Set other objects
-        for other in env.objects["other"]:
-            grid[other.pos[0], other.pos[1]] = 8
+        # Render all object types from the environment
+        for obj_type, objects in env.objects.items():
+            if obj_type == "rewards":
+                # Special handling for rewards to distinguish positive/negative
+                for reward in objects:
+                    value = reward.value
+                    if isinstance(value, list):
+                        value = value[0]
+                    grid_type = "rewards_positive" if value > 0 else "rewards_negative"
+                    if grid_type in self.GRID_VALUES:
+                        grid[reward.pos[0], reward.pos[1]] = self.GRID_VALUES[grid_type]
+            elif obj_type in self.GRID_VALUES:
+                # Standard handling for other object types
+                for obj in objects:
+                    grid[obj.pos[0], obj.pos[1]] = self.GRID_VALUES[obj_type]
 
         # Convert grid to ASCII string
         return "\n".join(
-            "".join(self.ascii_map[int(cell)] for cell in row) for row in grid
+            "".join(
+                self.ASCII_MAP.get(
+                    [k for k, v in self.GRID_VALUES.items() if v == int(cell)][0], "?"
+                )
+                for cell in row
+            )
+            for row in grid
         )
 
-    def render(self, env: Any, **kwargs) -> str:
-        # Render method for ASCII observation.
-        return self.make_ascii_obs(env)
+    def render(self, env: Any, agent_idx: int = 0, **kwargs) -> str:
+        """Render the environment as an ASCII string."""
+        return self.make_ascii_obs(env, agent_idx)
+
+    @classmethod
+    def add_object_type(cls, object_type: str, ascii_char: str) -> None:
+        """
+        Adds a new object type to the renderer with its ASCII representation.
+
+        Args:
+            object_type (str): The name of the new object type to add.
+            ascii_char (str): Single character to represent this object type.
+        """
+        if object_type not in cls.ASCII_MAP:
+            cls.ASCII_MAP[object_type] = ascii_char
+            cls.GRID_VALUES = {
+                obj_type: i for i, obj_type in enumerate(cls.ASCII_MAP.keys())
+            }

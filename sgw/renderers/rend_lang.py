@@ -114,7 +114,9 @@ class GridLangRenderer(RendererInterface):
 
         return descriptions
 
-    def make_language_obs(self, env: Any, first_person: bool = True) -> str:
+    def make_language_obs(
+        self, env: Any, first_person: bool = True, agent_idx: int = 0
+    ) -> str:
         # Create pronouns dictionary locally based on first_person parameter
         pronouns = {
             "subject": "you" if first_person else "the agent",
@@ -122,11 +124,11 @@ class GridLangRenderer(RendererInterface):
             "be": "are" if first_person else "is",
         }
 
-        agent_pos = np.array(env.agent.pos)
+        agent_pos = np.array(env.agents[agent_idx].pos)
         # Create inventory description
-        if env.agent.inventory:
+        if env.agents[agent_idx].inventory:
             inventory_items = {}
-            for item in env.agent.inventory:
+            for item in env.agents[agent_idx].inventory:
                 inventory_items[item.name] = inventory_items.get(item.name, 0) + 1
             inventory_desc = ", ".join(
                 f"{count} {name}" + ("s" if count > 1 else "")
@@ -139,7 +141,7 @@ class GridLangRenderer(RendererInterface):
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
             f"\n{inventory_text} "
-            f"\n{pronouns['subject'].capitalize()} can only see objects up to {env.agent.field_of_view} {'meter' if env.agent.field_of_view == 1 else 'meters'} away."
+            f"\n{pronouns['subject'].capitalize()} can only see objects up to {env.agents[agent_idx].field_of_view} {'meter' if env.agents[agent_idx].field_of_view == 1 else 'meters'} away."
         )
 
         # Get boundary descriptions
@@ -149,13 +151,13 @@ class GridLangRenderer(RendererInterface):
         all_objects = []
         for obj_list in env.objects.values():
             all_objects.extend(obj_list)
-        
+
         if all_objects:
             all_descriptions.extend(
                 self._get_object_descriptions(
                     all_objects,
                     agent_pos,
-                    env.agent.field_of_view,
+                    env.agents[agent_idx].field_of_view,
                     pronouns=pronouns,
                 )
             )
@@ -169,4 +171,7 @@ class GridLangRenderer(RendererInterface):
     def render(self, env: Any, **kwargs) -> str:
         # Render method for language observation.
         first_person = kwargs.get("first_person", True)
-        return self.make_language_obs(env, first_person=first_person)
+        agent_idx = kwargs.get("agent_idx", 0)
+        return self.make_language_obs(
+            env, first_person=first_person, agent_idx=agent_idx
+        )
