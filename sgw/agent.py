@@ -1,5 +1,6 @@
 import numpy as np
 from sgw.object import Key
+from sgw.enums import Action, ControlType
 
 
 class Agent:
@@ -11,8 +12,17 @@ class Agent:
         self.reward = 0
         self.field_of_view = field_of_view
         self.done = False
+        # Create direction map from Action enum
+        direction_vectors = Action.get_direction_map()
         self.direction_map = np.array(
-            [[-1, 0], [0, 1], [1, 0], [0, -1], [0, 0], [0, 0]]
+            [
+                direction_vectors[Action.MOVE_NORTH],
+                direction_vectors[Action.MOVE_EAST],
+                direction_vectors[Action.MOVE_SOUTH],
+                direction_vectors[Action.MOVE_WEST],
+                [0, 0],  # For NOOP
+                [0, 0],  # Extra padding
+            ]
         )
 
     def process_action(self, action, control_type):
@@ -20,26 +30,22 @@ class Agent:
         Process an action based on the control type.
         Returns the movement direction if any, None otherwise.
         """
-        from sgw.env import Action, ControlType
+        # Handle special actions (noop, collect)
+        if action.is_special:
+            return None
 
+        # Handle egocentric actions
         if control_type == ControlType.egocentric:
-            if action == Action.ROTATE_LEFT:
-                self.rotate(-1)
-                return None
-            elif action == Action.ROTATE_RIGHT:
-                self.rotate(1)
-                return None
-            elif action == Action.MOVE_FORWARD:
+            if action == Action.MOVE_FORWARD:
                 return self.direction_map[self.orientation]
+            elif action in [Action.ROTATE_LEFT, Action.ROTATE_RIGHT]:
+                rotation = -1 if action == Action.ROTATE_LEFT else 1
+                self.rotate(rotation)
+                return None
+        # Handle allocentric actions
         else:  # allocentric orientation
-            allocentric_mapping = {
-                Action.MOVE_UP: 0,
-                Action.MOVE_RIGHT: 1,
-                Action.MOVE_DOWN: 2,
-                Action.MOVE_LEFT: 3,
-            }
-            if action in allocentric_mapping:
-                direction_idx = allocentric_mapping[action]
+            if action.is_allocentric:
+                direction_idx = Action.get_direction_index(action)
                 self.looking = direction_idx
                 return self.direction_map[direction_idx]
         return None

@@ -2,7 +2,6 @@ from typing import Dict
 from gym import Env, spaces
 import numpy as np
 import random
-import enum
 from sgw.templates import generate_layout
 from sgw.renderers.rend_2d import Grid2DRenderer
 from sgw.renderers.rend_lang import GridLangRenderer
@@ -12,37 +11,7 @@ from sgw.renderers.rend_3d import Grid3DRenderer
 from sgw.agent import Agent
 import matplotlib.pyplot as plt
 import copy
-
-
-class ObsType(enum.Enum):
-    visual_2d = "visual_2d"
-    visual_window = "visual_window"
-    symbolic = "symbolic"
-    symbolic_window = "symbolic_window"
-    visual_3d = "visual_3d"
-    ascii = "ascii"
-    language = "language"
-
-
-class ControlType(enum.Enum):
-    allocentric = "allocentric"
-    egocentric = "egocentric"
-
-
-# New enum to represent all possible actions semantically.
-class Action(enum.Enum):
-    # Actions for allocentric orientation (direct movement)
-    MOVE_UP = enum.auto()
-    MOVE_RIGHT = enum.auto()
-    MOVE_DOWN = enum.auto()
-    MOVE_LEFT = enum.auto()
-    # Actions for egocentric orientation (rotate then move)
-    ROTATE_LEFT = enum.auto()
-    ROTATE_RIGHT = enum.auto()
-    MOVE_FORWARD = enum.auto()
-    # Optional actions for both types
-    NOOP = enum.auto()
-    COLLECT = enum.auto()
+from sgw.enums import ObsType, ControlType, Action
 
 
 class SuperGridWorld(Env):
@@ -124,28 +93,12 @@ class SuperGridWorld(Env):
         self.state_renderer = renderer_map[ObsType.visual_2d]()
 
     def set_action_space(self, control_type):
+        """Set up the action space based on control type and optional actions."""
         self.control_type = control_type
-        if self.control_type == ControlType.egocentric:
-            # For egocentric orientation, we use rotation/move semantics
-            self.valid_actions = [
-                Action.ROTATE_LEFT,
-                Action.ROTATE_RIGHT,
-                Action.MOVE_FORWARD,
-            ]
-        elif self.control_type == ControlType.allocentric:
-            # For allocentric orientation, the actions represent absolute directions
-            self.valid_actions = [
-                Action.MOVE_UP,
-                Action.MOVE_RIGHT,
-                Action.MOVE_DOWN,
-                Action.MOVE_LEFT,
-            ]
-        else:
-            raise Exception("No valid ControlType provided.")
-        if self.use_noop:
-            self.valid_actions.append(Action.NOOP)
-        if self.manual_collect:
-            self.valid_actions.append(Action.COLLECT)
+        # Get valid actions using the Action enum helper
+        self.valid_actions = Action.get_actions_for_control(
+            control_type, self.use_noop, self.manual_collect
+        )
         # Create action space for each agent
         self.action_space = spaces.Tuple(
             [spaces.Discrete(len(self.valid_actions))] * self.num_agents

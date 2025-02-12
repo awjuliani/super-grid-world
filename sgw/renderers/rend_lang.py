@@ -2,6 +2,7 @@ import numpy as np
 from sgw.renderers.rend_interface import RendererInterface
 from typing import Any
 from gym import spaces
+from sgw.enums import ControlType
 
 
 class GridLangRenderer(RendererInterface):
@@ -50,6 +51,7 @@ class GridLangRenderer(RendererInterface):
         agent_pos,
         field_of_view,
         pronouns=None,
+        agent_looking=None,
     ):
         """Unified helper method to generate descriptions for any type of object."""
         descriptions = []
@@ -61,6 +63,12 @@ class GridLangRenderer(RendererInterface):
             # Skip objects beyond field of view only in first person mode
             if first_person and distance > field_of_view:
                 continue
+            # If in egocentric mode, further restrict to objects in front based on viewing window
+            if first_person and agent_looking is not None:
+                if not self._is_in_visible_window(
+                    pos, agent_pos, field_of_view, agent_looking
+                ):
+                    continue
             descriptions.append(
                 f"There is a {item_type} at {pronouns['possessive']} position."
                 if direction == "same position"
@@ -114,6 +122,34 @@ class GridLangRenderer(RendererInterface):
 
         return descriptions
 
+    def _is_in_visible_window(self, obj_pos, agent_pos, fov, looking):
+        """Determine if an object at obj_pos is within the visible window when the agent is in egocentric mode.
+        The window is defined as a rectangle in front of the agent:
+        - North (0): rows [agent_row - fov, agent_row] and columns [agent_col - fov, agent_col + fov]
+        - East  (1): rows [agent_row - fov, agent_row + fov] and columns [agent_col, agent_col + fov]
+        - South (2): rows [agent_row, agent_row + fov] and columns [agent_col - fov, agent_col + fov]
+        - West  (3): rows [agent_row - fov, agent_row + fov] and columns [agent_col - fov, agent_col]
+        """
+        agent_row, agent_col = int(agent_pos[0]), int(agent_pos[1])
+        obj_row, obj_col = int(obj_pos[0]), int(obj_pos[1])
+        if looking == 0:  # North
+            return (agent_row - fov <= obj_row <= agent_row) and (
+                agent_col - fov <= obj_col <= agent_col + fov
+            )
+        elif looking == 1:  # East
+            return (agent_col <= obj_col <= agent_col + fov) and (
+                agent_row - fov <= obj_row <= agent_row + fov
+            )
+        elif looking == 2:  # South
+            return (agent_row <= obj_row <= agent_row + fov) and (
+                agent_col - fov <= obj_col <= agent_col + fov
+            )
+        elif looking == 3:  # West
+            return (agent_col - fov <= obj_col <= agent_col) and (
+                agent_row - fov <= obj_row <= agent_row + fov
+            )
+        return True
+
     def make_language_obs(
         self, env: Any, first_person: bool = True, agent_idx: int = 0
     ) -> str:
@@ -124,11 +160,19 @@ class GridLangRenderer(RendererInterface):
             "be": "are" if first_person else "is",
         }
 
-        agent_pos = np.array(env.agents[agent_idx].pos)
+        agent = env.agents[agent_idx]
+        agent_pos = np.array(agent.pos)
+
+        # Get orientation description based on control type
+        orientation_desc = ""
+        if env.control_type == ControlType.egocentric:
+            direction_map = {0: "north", 1: "east", 2: "south", 3: "west"}
+            orientation_desc = f"{pronouns['subject'].capitalize()} {pronouns['be']} facing {direction_map[agent.looking]}. "
+
         # Create inventory description
-        if env.agents[agent_idx].inventory:
+        if agent.inventory:
             inventory_items = {}
-            for item in env.agents[agent_idx].inventory:
+            for item in agent.inventory:
                 inventory_items[item.name] = inventory_items.get(item.name, 0) + 1
             inventory_desc = ", ".join(
                 f"{count} {name}" + ("s" if count > 1 else "")
@@ -140,8 +184,9 @@ class GridLangRenderer(RendererInterface):
 
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
+            f"{orientation_desc}"
             f"\n{inventory_text} "
-            f"\n{pronouns['subject'].capitalize()} can only see objects up to {env.agents[agent_idx].field_of_view} {'meter' if env.agents[agent_idx].field_of_view == 1 else 'meters'} away."
+            f"\n{pronouns['subject'].capitalize()} can only see objects up to {agent.field_of_view} {'meter' if agent.field_of_view == 1 else 'meters'} away."
         )
 
         # Get boundary descriptions
@@ -153,17 +198,21 @@ class GridLangRenderer(RendererInterface):
             all_objects.extend(obj_list)
 
         if all_objects:
+            agent_looking = (
+                agent.looking if env.control_type == ControlType.egocentric else None
+            )
             all_descriptions.extend(
                 self._get_object_descriptions(
                     all_objects,
                     agent_pos,
-                    env.agents[agent_idx].field_of_view,
+                    agent.field_of_view,
                     pronouns=pronouns,
+                    agent_looking=agent_looking,
                 )
             )
 
         return (
-            f"{base_description}\nThere are no objects or walls near you."
+            f"{base_description}\nThere are no visible objects or walls near you."
             if not all_descriptions
             else f"{base_description}\n\n" + "\n".join(all_descriptions)
         )

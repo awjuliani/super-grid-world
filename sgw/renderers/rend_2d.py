@@ -6,6 +6,7 @@ from gym import spaces
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
 from sgw.object import Wall, Reward, Marker, Key, Door, Warp, Other
+from sgw.enums import ControlType
 
 
 class Grid2DRenderer(RendererInterface):
@@ -231,14 +232,12 @@ class Grid2DRenderer(RendererInterface):
     def _render_trees(self, img: np.ndarray, trees: List[Any]) -> None:
         """Render tree objects with a triangular crown and rectangular trunk."""
         for tree in trees:
-            # Calculate center and dimensions
             center_x = tree.pos[1] * self.block_size + self.block_size // 2
             center_y = tree.pos[0] * self.block_size + self.block_size // 2
             crown_size = self.block_size // 3
             trunk_width = self.block_size // 6
             trunk_height = self.block_size // 3
 
-            # Draw trunk (rectangle)
             trunk_start = (center_x - trunk_width // 2, center_y + crown_size // 2)
             trunk_end = (
                 center_x + trunk_width // 2,
@@ -246,7 +245,6 @@ class Grid2DRenderer(RendererInterface):
             )
             cv.rectangle(img, trunk_start, trunk_end, self.TREE_BORDER, -1)
 
-            # Draw crown (triangle)
             crown_pts = np.array(
                 [
                     [center_x, center_y - crown_size],
@@ -272,11 +270,9 @@ class Grid2DRenderer(RendererInterface):
             cv.circle(img, center, radius, self.FRUIT_BORDER, self.block_border - 1)
 
     def _create_new_frame(self, env: Any) -> np.ndarray:
-        # Create the background image and render static elements
         img = self._create_base_image()
         self._render_gridlines(img)
 
-        # Render all objects using registered renderers
         for key, renderer in self.object_renderers.items():
             if key in env.objects:
                 renderer(img, env.objects[key])
@@ -298,10 +294,10 @@ class Grid2DRenderer(RendererInterface):
         y_offset = agent_pos[0] * self.block_size + agent_offset
 
         triangle_pts = {
-            0: [(0, 1), (1, 1), (0.5, 0)],  # facing up
-            1: [(0, 0), (0, 1), (1, 0.5)],  # facing right
-            2: [(0, 0), (1, 0), (0.5, 1)],  # facing down
-            3: [(1, 0), (1, 1), (0, 0.5)],  # facing left
+            0: [(0, 1), (1, 1), (0.5, 0)],
+            1: [(0, 0), (0, 1), (1, 0.5)],
+            2: [(0, 0), (1, 0), (0.5, 1)],
+            3: [(1, 0), (1, 1), (0, 0.5)],
         }
 
         pts = np.array(
@@ -324,32 +320,114 @@ class Grid2DRenderer(RendererInterface):
             for key, value in env.objects.items()
         }
 
-    def create_visibility_mask(self, agent_pos, vision_range):
-        """Create a mask showing what's visible to the agent."""
+    # Helper methods to compute crop coordinates to remove duplicated logic
+    def _compute_vertical_crop(
+        self, start_block: int, end_block: int, window_size: int, direction: int = None
+    ) -> Tuple[int, int]:
+        if direction == 0:  # Facing up: use bottom edge of block
+            v_end = end_block
+            v_start = v_end - window_size
+        elif direction == 2:  # Facing down: use top edge of block
+            v_start = start_block
+            v_end = v_start + window_size
+        else:
+            center = start_block + self.block_size // 2
+            half = window_size // 2
+            v_start = center - half
+            v_end = center + half
+        return v_start, v_end
+
+    def _compute_horizontal_crop(
+        self, start_block: int, end_block: int, window_size: int, direction: int = None
+    ) -> Tuple[int, int]:
+        if direction == 1:  # Facing right: use left edge
+            h_start = start_block
+            h_end = h_start + window_size
+        elif direction == 3:  # Facing left: use right edge
+            h_end = end_block
+            h_start = h_end - window_size
+        else:
+            center = start_block + self.block_size // 2
+            half = window_size // 2
+            h_start = center - half
+            h_end = center + half
+        return h_start, h_end
+
+    def create_visibility_mask(
+        self, agent_pos, vision_range, egocentric=False, looking=None
+    ):
         mask = np.zeros((self.img_size, self.img_size, 4), dtype=np.uint8)
         mask[:, :, 3] = self.FOG_COLOR[3]  # Set alpha channel for fog of war
-
-        # Calculate visible region in pixels
-        x, y = agent_pos
         window_size = (2 * vision_range + 1) * self.block_size
-        x_center = (y * self.block_size) + (self.block_size // 2)
-        y_center = (x * self.block_size) + (self.block_size // 2)
-        half_window = window_size // 2
+        row_start_block = agent_pos[0] * self.block_size
+        row_end_block = (agent_pos[0] + 1) * self.block_size
+        col_start_block = agent_pos[1] * self.block_size
+        col_end_block = (agent_pos[1] + 1) * self.block_size
 
-        x_start = x_center - half_window
-        x_end = x_center + half_window
-        y_start = y_center - half_window
-        y_end = y_center + half_window
+        if not egocentric:
+            v_start, v_end = self._compute_vertical_crop(
+                row_start_block, row_end_block, window_size
+            )
+            h_start, h_end = self._compute_horizontal_crop(
+                col_start_block, col_end_block, window_size
+            )
+        else:
+            if looking in [0, 2]:
+                v_start, v_end = self._compute_vertical_crop(
+                    row_start_block, row_end_block, window_size, direction=looking
+                )
+                h_start, h_end = self._compute_horizontal_crop(
+                    col_start_block, col_end_block, window_size
+                )
+            elif looking in [1, 3]:
+                v_start, v_end = self._compute_vertical_crop(
+                    row_start_block, row_end_block, window_size
+                )
+                h_start, h_end = self._compute_horizontal_crop(
+                    col_start_block, col_end_block, window_size, direction=looking
+                )
+            else:
+                v_start, v_end = self._compute_vertical_crop(
+                    row_start_block, row_end_block, window_size
+                )
+                h_start, h_end = self._compute_horizontal_crop(
+                    col_start_block, col_end_block, window_size
+                )
 
-        # Ensure window boundaries stay within image
-        x_start = max(0, x_start)
-        x_end = min(self.img_size, x_end)
-        y_start = max(0, y_start)
-        y_end = min(self.img_size, y_end)
-
-        # Set visible region to transparent
-        mask[y_start:y_end, x_start:x_end, 3] = 0
+        v_start = max(0, v_start)
+        v_end = min(self.img_size, v_end)
+        h_start = max(0, h_start)
+        h_end = min(self.img_size, h_end)
+        mask[v_start:v_end, h_start:h_end, 3] = 0
         return mask
+
+    def _apply_fog(self, img: np.ndarray, env: Any, agent_idx: int) -> np.ndarray:
+        rgba_img = np.zeros((img.shape[0], img.shape[1], 4), dtype=np.uint8)
+        rgba_img[:, :, :3] = img
+        rgba_img[:, :, 3] = 255
+        combined_mask = np.full(
+            (self.img_size, self.img_size), self.FOG_COLOR[3], dtype=np.uint8
+        )
+        for agent in env.agents:
+            if agent.field_of_view is not None:
+                egocentric = env.control_type == ControlType.egocentric
+                mask = self.create_visibility_mask(
+                    agent.pos,
+                    agent.field_of_view,
+                    egocentric,
+                    agent.looking if egocentric else None,
+                )
+                combined_mask = np.minimum(combined_mask, mask[:, :, 3])
+        fog = np.zeros_like(rgba_img)
+        fog[:, :] = self.FOG_COLOR
+        fog[:, :, 3] = combined_mask
+        alpha = fog[:, :, 3:4].astype(float) / 255.0
+        rgba_img[:, :, :3] = (
+            rgba_img[:, :, :3].astype(float) * (1 - alpha)
+            + fog[:, :, :3].astype(float) * alpha
+        ).astype(np.uint8)
+        rgba_img[:, :, 3] = 255 - combined_mask
+        return rgba_img
 
     def _get_base_image_cached(self, env: Any) -> np.ndarray:
         if self._should_update_cache(env):
@@ -370,28 +448,6 @@ class Grid2DRenderer(RendererInterface):
             for i, agent in enumerate(env.agents):
                 color = self.AGENT_COLOR if i == agent_idx else self.OTHER_AGENT_COLOR
                 self.render_agent(img, agent.pos, agent.looking, color)
-
-    def _apply_fog(self, img: np.ndarray, env: Any, agent_idx: int) -> np.ndarray:
-        rgba_img = np.zeros((img.shape[0], img.shape[1], 4), dtype=np.uint8)
-        rgba_img[:, :, :3] = img
-        rgba_img[:, :, 3] = 255
-        combined_mask = np.full(
-            (self.img_size, self.img_size), self.FOG_COLOR[3], dtype=np.uint8
-        )
-        for agent in env.agents:
-            if agent.field_of_view is not None:
-                mask = self.create_visibility_mask(agent.pos, agent.field_of_view)
-                combined_mask = np.minimum(combined_mask, mask[:, :, 3])
-        fog = np.zeros_like(rgba_img)
-        fog[:, :] = self.FOG_COLOR
-        fog[:, :, 3] = combined_mask
-        alpha = fog[:, :, 3:4].astype(float) / 255.0
-        rgba_img[:, :, :3] = (
-            rgba_img[:, :, :3].astype(float) * (1 - alpha)
-            + fog[:, :, :3].astype(float) * alpha
-        ).astype(np.uint8)
-        rgba_img[:, :, 3] = 255 - combined_mask
-        return rgba_img
 
     def render_frame(
         self, env: Any, agent_idx: int = 0, is_state_view: bool = False
@@ -418,22 +474,47 @@ class Grid2DRenderer(RendererInterface):
         ] = img
 
         x, y = env.agents[agent_idx].pos
-        # Calculate window size based on vision range
         window_size = (2 * w_size + 1) * self.block_size
-        x_center = (x * self.block_size) + self.block_size + (self.block_size // 2)
-        y_center = (y * self.block_size) + self.block_size + (self.block_size // 2)
-        half_window = window_size // 2
-        x_start = x_center - half_window
-        x_end = x_center + half_window
-        y_start = y_center - half_window
-        y_end = y_center + half_window
+        x_start_block = (x * self.block_size) + self.block_size
+        x_end_block = ((x + 1) * self.block_size) + self.block_size
+        y_start_block = (y * self.block_size) + self.block_size
+        y_end_block = ((y + 1) * self.block_size) + self.block_size
 
-        # Ensure window boundaries stay within padded template
+        if env.control_type == ControlType.egocentric:
+            agent_dir = env.agents[agent_idx].looking
+            if agent_dir in [0, 2]:
+                x_start, x_end = self._compute_vertical_crop(
+                    x_start_block, x_end_block, window_size, direction=agent_dir
+                )
+                y_start, y_end = self._compute_horizontal_crop(
+                    y_start_block, y_end_block, window_size
+                )
+            elif agent_dir in [1, 3]:
+                x_start, x_end = self._compute_vertical_crop(
+                    x_start_block, x_end_block, window_size
+                )
+                y_start, y_end = self._compute_horizontal_crop(
+                    y_start_block, y_end_block, window_size, direction=agent_dir
+                )
+            else:
+                x_start, x_end = self._compute_vertical_crop(
+                    x_start_block, x_end_block, window_size
+                )
+                y_start, y_end = self._compute_horizontal_crop(
+                    y_start_block, y_end_block, window_size
+                )
+        else:
+            x_start, x_end = self._compute_vertical_crop(
+                x_start_block, x_end_block, window_size
+            )
+            y_start, y_end = self._compute_horizontal_crop(
+                y_start_block, y_end_block, window_size
+            )
+
         x_start = max(0, x_start)
         x_end = min(padded_size, x_end)
         y_start = max(0, y_start)
         y_end = min(padded_size, y_end)
-
         window = template[x_start:x_end, y_start:y_end]
         window = resize_obs(window, self.resolution, self.torch_obs)
         return window
