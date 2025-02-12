@@ -45,6 +45,78 @@ class GridLangRenderer(RendererInterface):
         else:
             return f"{v_region}-{h_region}"
 
+    def _cardinal_to_egocentric(self, cardinal_dir: str, agent_looking: int) -> str:
+        """Convert cardinal direction to egocentric direction based on agent's orientation.
+        agent_looking: 0=North, 1=East, 2=South, 3=West
+        """
+        # Map of cardinal directions to their angle in degrees (clockwise from north)
+        cardinal_angles = {
+            "north": 0,
+            "north-east": 45,
+            "east": 90,
+            "south-east": 135,
+            "south": 180,
+            "south-west": 225,
+            "west": 270,
+            "north-west": 315,
+            "same position": -1,
+        }
+
+        if cardinal_dir == "same position":
+            return "at the same position"
+
+        # Convert agent's looking direction to degrees
+        agent_angle = agent_looking * 90
+
+        # Get angle of cardinal direction
+        dir_angle = cardinal_angles[cardinal_dir]
+
+        # Calculate relative angle
+        relative_angle = (dir_angle - agent_angle) % 360
+
+        # Convert relative angle to egocentric direction
+        if relative_angle == 0:
+            return "in front of"
+        elif relative_angle == 180:
+            return "behind"
+        elif 0 < relative_angle < 180:
+            return "to the right of"
+        else:
+            return "to the left of"
+
+    def _get_direction_and_distance(
+        self, obj_pos, agent_pos, control_type=None, agent_looking=None
+    ):
+        """Helper method to get direction and distance.
+        In allocentric mode: returns cardinal directions
+        In egocentric mode: returns relative directions (left/right/front/behind)
+        """
+        diff = np.array(obj_pos) - agent_pos
+
+        # Calculate Euclidean distance
+        distance = np.floor(2 * np.sqrt(diff[0] ** 2 + diff[1] ** 2)) / 2
+
+        if distance == 0:
+            return "same position", 0
+
+        # Get cardinal direction first
+        y_dir = "north" if diff[0] < 0 else "south" if diff[0] > 0 else ""
+        x_dir = "east" if diff[1] > 0 else "west" if diff[1] < 0 else ""
+
+        cardinal_dir = (
+            f"{y_dir}-{x_dir}"
+            if (y_dir and x_dir)
+            else (y_dir or x_dir or "same position")
+        )
+
+        # If in egocentric mode, convert to relative direction
+        if control_type == ControlType.egocentric and agent_looking is not None:
+            direction = self._cardinal_to_egocentric(cardinal_dir, agent_looking)
+        else:
+            direction = cardinal_dir
+
+        return direction, int(distance)
+
     def _get_object_descriptions(
         self,
         objects,
@@ -52,6 +124,7 @@ class GridLangRenderer(RendererInterface):
         field_of_view,
         pronouns=None,
         agent_looking=None,
+        control_type=None,
     ):
         """Unified helper method to generate descriptions for any type of object."""
         descriptions = []
@@ -59,7 +132,9 @@ class GridLangRenderer(RendererInterface):
 
         first_person = pronouns["subject"] == "you"
         for pos, item_type in pos_type_pairs:
-            direction, distance = self._get_direction_and_distance(pos, agent_pos)
+            direction, distance = self._get_direction_and_distance(
+                pos, agent_pos, control_type=control_type, agent_looking=agent_looking
+            )
             # Skip objects beyond field of view only in first person mode
             if first_person and distance > field_of_view:
                 continue
@@ -72,30 +147,10 @@ class GridLangRenderer(RendererInterface):
             descriptions.append(
                 f"There is a {item_type} at {pronouns['possessive']} position."
                 if direction == "same position"
-                else f"There is a {item_type} {direction} of {pronouns['subject']}, {distance} {'meter' if distance == 1 else 'meters'} away."
+                else f"There is a {item_type} {direction} {pronouns['subject']}, {distance} {'meter' if distance == 1 else 'meters'} away."
             )
 
         return descriptions
-
-    def _get_direction_and_distance(self, obj_pos, agent_pos):
-        """Helper method to get cardinal direction and distance."""
-        diff = np.array(obj_pos) - agent_pos
-        y_dir = "north" if diff[0] < 0 else "south" if diff[0] > 0 else ""
-        x_dir = "east" if diff[1] > 0 else "west" if diff[1] < 0 else ""
-
-        direction = (
-            f"{y_dir}-{x_dir}"
-            if (y_dir and x_dir)
-            else (y_dir or x_dir or "same position")
-        )
-        # Use Euclidean distance with 0.5 unit increments
-        distance = (
-            np.floor(2 * np.sqrt(diff[0] ** 2 + diff[1] ** 2)) / 2
-            if direction != "same position"
-            else 0
-        )
-
-        return direction, int(distance)
 
     def _get_boundary_descriptions(self, agent_pos, pronouns):
         """Helper method to describe adjacent outer walls."""
@@ -208,6 +263,7 @@ class GridLangRenderer(RendererInterface):
                     agent.field_of_view,
                     pronouns=pronouns,
                     agent_looking=agent_looking,
+                    control_type=env.control_type,
                 )
             )
 

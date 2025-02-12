@@ -458,6 +458,12 @@ class Grid2DRenderer(RendererInterface):
             return self._apply_fog(img, env, agent_idx)
         return resize_obs(img, self.resolution, self.torch_obs)
 
+    def _rotate_image(self, image: np.ndarray, agent_dir: int) -> np.ndarray:
+        """Rotate image so agent faces upward (rotate 90° clockwise * number of turns needed)."""
+        if agent_dir > 0:
+            return np.rot90(image, k=agent_dir, axes=(0, 1))
+        return image
+
     def render_window(
         self, env: Any, w_size: int = 2, agent_idx: int = 0, is_state_view: bool = False
     ) -> np.ndarray:
@@ -517,6 +523,11 @@ class Grid2DRenderer(RendererInterface):
         y_end = min(padded_size, y_end)
         window = template[x_start:x_end, y_start:y_end]
         window = resize_obs(window, self.resolution, self.torch_obs)
+
+        # Rotate the window in egocentric mode so agent faces up
+        if env.control_type == ControlType.egocentric:
+            window = self._rotate_image(window, env.agents[agent_idx].looking)
+
         return window
 
     def render(
