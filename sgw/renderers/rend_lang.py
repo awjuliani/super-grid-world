@@ -213,6 +213,7 @@ class GridLangRenderer(RendererInterface):
             "subject": "you" if first_person else "the agent",
             "possessive": "your" if first_person else "the agent's",
             "be": "are" if first_person else "is",
+            "object": "yourself" if first_person else "itself",
         }
 
         agent = env.agents[agent_idx]
@@ -222,7 +223,7 @@ class GridLangRenderer(RendererInterface):
         orientation_desc = ""
         if env.control_type == ControlType.egocentric:
             direction_map = {0: "north", 1: "east", 2: "south", 3: "west"}
-            orientation_desc = f"{pronouns['subject'].capitalize()} {pronouns['be']} facing {direction_map[agent.looking]}. "
+            orientation_desc = f"{pronouns['subject'].capitalize()} {pronouns['be']} facing {direction_map[agent.looking]}. {pronouns['subject'].capitalize()} cannot see objects behind {pronouns['object']}."
 
         # Create inventory description
         if agent.inventory:
@@ -239,7 +240,7 @@ class GridLangRenderer(RendererInterface):
 
         base_description = (
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
-            f"{orientation_desc}"
+            f"\n{orientation_desc}"
             f"\n{inventory_text} "
             f"\n{pronouns['subject'].capitalize()} can only see objects up to {agent.field_of_view} {'meter' if agent.field_of_view == 1 else 'meters'} away."
         )
