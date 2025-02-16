@@ -22,7 +22,7 @@ class SuperGridWorld(Env):
     def __init__(
         self,
         template_name: str = "empty",
-        grid_shape: tuple = (11, 11),
+        grid_shape: tuple = (9, 9),
         obs_type: ObsType = ObsType.visual_2d,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
@@ -58,6 +58,7 @@ class SuperGridWorld(Env):
         self.agents = [None] * num_agents  # List to store multiple agents
 
     def _init_grid(self, template, grid_shape):
+        # grid_shape is (height, width)
         self.agent_start_pos, self.template_objects = generate_layout(
             template, grid_shape[0], grid_shape[1], self.add_outer_walls
         )
@@ -300,12 +301,42 @@ class SuperGridWorld(Env):
         chosen_action = self.valid_actions[action]
         return chosen_action == Action.COLLECT
 
+    def _find_object_at(self, pos):
+        """Find the first object at the given position."""
+        for obj_type in self.objects.values():
+            obj = next((o for o in obj_type if o == pos), None)
+            if obj:
+                return obj
+        return None
+
     def _move_agent(self, action: int, agent_idx: int):
         """Process the action and move the specified agent if applicable."""
         chosen_action = self.valid_actions[action]
         agent = self.agents[agent_idx]
         direction = agent.process_action(chosen_action, self.control_type)
-        if direction is not None and self.check_target(np.array(agent.pos) + direction):
+        if direction is None:
+            return
+
+        target_pos = list((np.array(agent.pos) + direction).tolist())
+
+        # Check grid bounds
+        if not (
+            -1 < target_pos[0] < self.grid_shape[0]
+            and -1 < target_pos[1] < self.grid_shape[1]
+        ):
+            return
+
+        # Handle any pre-step interactions
+        obj = self._find_object_at(target_pos)
+        if obj and hasattr(obj, "pre_step_interaction"):
+            allowed, message = obj.pre_step_interaction(agent, direction)
+            if message:
+                self.events.append(message)
+            if not allowed:
+                return
+
+        # Move agent if target is valid
+        if self.check_target(target_pos):
             agent.move(direction)
 
     def _object_interactions(self, action: int, agent_idx: int):
@@ -332,8 +363,8 @@ class SuperGridWorld(Env):
 
     @property
     def grid_width(self):
-        return self.grid_shape[0]
+        return self.grid_shape[1]  # Second dimension is width
 
     @property
     def grid_height(self):
-        return self.grid_shape[1]
+        return self.grid_shape[0]  # First dimension is height

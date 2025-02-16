@@ -51,8 +51,8 @@ class Grid2DRenderer(RendererInterface):
         self.torch_obs = torch_obs
         self.cached_image = None
         self.cached_objects = None
-        self.img_width = self.block_size * self.grid_shape[0]
-        self.img_height = self.block_size * self.grid_shape[1]
+        self.img_height = self.block_size * self.grid_shape[0]
+        self.img_width = self.block_size * self.grid_shape[1]
 
         # Register default object renderers
         self.object_renderers: Dict[str, Callable[[np.ndarray, List[Any]], None]] = {}
@@ -83,12 +83,14 @@ class Grid2DRenderer(RendererInterface):
         self, pos: Tuple[int, int]
     ) -> Tuple[Tuple[int, int], Tuple[int, int]]:
         row, col = pos
-        row_unit = row * self.block_size
-        col_unit = col * self.block_size
+        # OpenCV uses (x,y) coordinates where x is horizontal (column) and y is vertical (row)
+        # Convert from grid coordinates (row, col) to screen coordinates (x, y)
+        x_unit = col * self.block_size
+        y_unit = row * self.block_size
         true_start = self.block_border + 1
         block_end = self.block_size - self.block_border - 1
-        start = (row_unit + true_start, col_unit + true_start)
-        end = (row_unit + block_end, col_unit + block_end)
+        start = (x_unit + true_start, y_unit + true_start)
+        end = (x_unit + block_end, y_unit + block_end)
         return start, end
 
     def _create_base_image(self) -> np.ndarray:
@@ -168,9 +170,12 @@ class Grid2DRenderer(RendererInterface):
 
     def _render_keys(self, img: np.ndarray, keys: List[Key]) -> None:
         for key in keys:
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
             center = (
-                key.pos[1] * self.block_size + self.block_size // 2,
-                key.pos[0] * self.block_size + self.block_size // 2,
+                key.pos[1] * self.block_size
+                + self.block_size // 2,  # x = col * block_size
+                key.pos[0] * self.block_size
+                + self.block_size // 2,  # y = row * block_size
             )
             pts = np.array(
                 [
@@ -200,9 +205,12 @@ class Grid2DRenderer(RendererInterface):
 
     def _render_warps(self, img: np.ndarray, warps: List[Warp]) -> None:
         for warp in warps:
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
             center = (
-                warp.pos[1] * self.block_size + self.block_size // 2,
-                warp.pos[0] * self.block_size + self.block_size // 2,
+                warp.pos[1] * self.block_size
+                + self.block_size // 2,  # x = col * block_size
+                warp.pos[0] * self.block_size
+                + self.block_size // 2,  # y = row * block_size
             )
             radius = self.block_size // 4
             cv.circle(img, center, radius, self.WARP_FILL, -1)
@@ -210,9 +218,12 @@ class Grid2DRenderer(RendererInterface):
 
     def _render_other(self, img: np.ndarray, others: List[Other]) -> None:
         for other in others:
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
             center = (
-                other.pos[1] * self.block_size + self.block_size // 2,
-                other.pos[0] * self.block_size + self.block_size // 2,
+                other.pos[1] * self.block_size
+                + self.block_size // 2,  # x = col * block_size
+                other.pos[0] * self.block_size
+                + self.block_size // 2,  # y = row * block_size
             )
             letter = other.name[0].upper() if other.name else "?"
             font = cv.FONT_HERSHEY_SIMPLEX
@@ -229,8 +240,13 @@ class Grid2DRenderer(RendererInterface):
     def _render_trees(self, img: np.ndarray, trees: List[Any]) -> None:
         """Render tree objects with a triangular crown and rectangular trunk."""
         for tree in trees:
-            center_x = tree.pos[1] * self.block_size + self.block_size // 2
-            center_y = tree.pos[0] * self.block_size + self.block_size // 2
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
+            center_x = (
+                tree.pos[1] * self.block_size + self.block_size // 2
+            )  # x = col * block_size
+            center_y = (
+                tree.pos[0] * self.block_size + self.block_size // 2
+            )  # y = row * block_size
             crown_size = self.block_size // 3
             trunk_width = self.block_size // 6
             trunk_height = self.block_size // 3
@@ -258,9 +274,12 @@ class Grid2DRenderer(RendererInterface):
     def _render_fruits(self, img: np.ndarray, fruits: List[Any]) -> None:
         """Render fruit objects as small circles."""
         for fruit in fruits:
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
             center = (
-                fruit.pos[1] * self.block_size + self.block_size // 2,
-                fruit.pos[0] * self.block_size + self.block_size // 2,
+                fruit.pos[1] * self.block_size
+                + self.block_size // 2,  # x = col * block_size
+                fruit.pos[0] * self.block_size
+                + self.block_size // 2,  # y = row * block_size
             )
             radius = self.block_size // 4
             cv.circle(img, center, radius, self.FRUIT_FILL, -1)
@@ -287,14 +306,15 @@ class Grid2DRenderer(RendererInterface):
         agent_dir = int(agent_dir)
         agent_size = self.block_size // 2
         agent_offset = self.block_size // 4
-        x_offset = agent_pos[1] * self.block_size + agent_offset
-        y_offset = agent_pos[0] * self.block_size + agent_offset
+        # Convert from grid coordinates (row, col) to screen coordinates (x, y)
+        x_offset = agent_pos[1] * self.block_size + agent_offset  # x = col * block_size
+        y_offset = agent_pos[0] * self.block_size + agent_offset  # y = row * block_size
 
         triangle_pts = {
-            0: [(0, 1), (1, 1), (0.5, 0)],
-            1: [(0, 0), (0, 1), (1, 0.5)],
-            2: [(0, 0), (1, 0), (0.5, 1)],
-            3: [(1, 0), (1, 1), (0, 0.5)],
+            0: [(0, 1), (1, 1), (0.5, 0)],  # North
+            1: [(0, 0), (0, 1), (1, 0.5)],  # East
+            2: [(0, 0), (1, 0), (0.5, 1)],  # South
+            3: [(1, 0), (1, 1), (0, 0.5)],  # West
         }
 
         pts = np.array(

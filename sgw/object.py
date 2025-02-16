@@ -82,19 +82,29 @@ class Key(Object):
 
 class Door(Object):
     def __init__(self, pos, orientation):
-        super().__init__(pos, False, True)
+        super().__init__(pos, obstacle=True, consumable=True)
         self.orientation = orientation
         self.name = "locked door"
 
     def copy(self):
         return type(self)(list(self.pos), self.orientation)
 
+    def try_unlock(self, agent):
+        """Attempt to unlock the door with a key from the agent's inventory."""
+        if not self.obstacle:  # Already unlocked
+            return True, None
+        if agent.use_key():
+            self.obstacle = False  # Unlock the door
+            return True, "Agent unlocked and went through a door"
+        return False, "Agent tried to open door but had no key"
+
     def interact(self, agent):
         super().interact(agent)
-        if agent.use_key():
-            agent.teleport(self.pos)
-            return "Agent unlocked and went through a door"
-        return "Agent tried to open door but had no key"
+        success, message = self.try_unlock(agent)
+        return message
+
+    def pre_step_interaction(self, agent, direction):
+        return self.try_unlock(agent)
 
 
 class Warp(Object):

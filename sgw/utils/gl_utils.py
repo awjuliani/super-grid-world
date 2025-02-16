@@ -32,11 +32,14 @@ def load_texture(filename, texture_cache):
     return texture_id
 
 
-def render_plane(x, y, z, area, texture_id, repeat=4):
+def render_plane(x, y, z, area, texture_id, repeat=None):
     glEnable(GL_TEXTURE_2D)
     glBindTexture(GL_TEXTURE_2D, texture_id)
 
     half_area = area / 2.0
+    # If repeat is not specified, make each texture unit correspond to one grid unit
+    if repeat is None:
+        repeat = area
 
     glPushMatrix()
     glTranslatef(x, y, z)

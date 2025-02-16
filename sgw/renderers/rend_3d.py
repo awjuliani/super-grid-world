@@ -1,6 +1,7 @@
 import glfw
 import numpy as np
 import os
+import copy
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from sgw.utils.gl_utils import (
@@ -160,16 +161,18 @@ class Grid3DRenderer(RendererInterface):
             if "scene" in self.display_lists:
                 glDeleteLists(self.display_lists["scene"], 1)
             self.display_lists["scene"] = self.create_scene_display_list(env)
-            self.last_objects = env.objects.copy()
+            self.last_objects = copy.deepcopy(env.objects)
         glCallList(self.display_lists["scene"])
 
         # Render floor
         render_plane(
-            env.grid_width / 2,
+            env.grid_width / 2 - 0.5,  # Shift by half a unit to align with grid
             -0.5,
-            env.grid_height / 2,
+            env.grid_height / 2 - 0.5,  # Shift by half a unit to align with grid
             max(env.grid_width, env.grid_height),
             self.textures["floor"],
+            repeat=max(env.grid_width, env.grid_height)
+            / 4,  # Make each square in the 4x4 pattern correspond to one grid unit
         )
 
         # Read pixels
