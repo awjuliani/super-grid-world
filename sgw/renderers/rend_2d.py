@@ -32,18 +32,18 @@ class Grid2DRenderer(RendererInterface):
     TREE_FILL = (34, 139, 34)  # Forest green
     TREE_BORDER = (0, 100, 0)  # Dark green
     FRUIT_FILL = (255, 69, 0)  # Red-orange
-    FRUIT_BORDER = (200, 50, 0)  # Dark red-orange
+    FRUIT_BORDER = (200, 50, 0)
 
     def __init__(
         self,
-        grid_size: int,
+        grid_shape: Tuple[int, int],
         block_size: int = 32,
         block_border: int = 3,
         window_size: int = None,
         resolution: int = 256,
         torch_obs: bool = False,
     ):
-        self.grid_size = grid_size
+        self.grid_shape = grid_shape
         self.block_size = block_size
         self.block_border = block_border
         self.window_size = window_size
@@ -51,7 +51,8 @@ class Grid2DRenderer(RendererInterface):
         self.torch_obs = torch_obs
         self.cached_image = None
         self.cached_objects = None
-        self.img_size = self.block_size * self.grid_size
+        self.img_width = self.block_size * self.grid_shape[0]
+        self.img_height = self.block_size * self.grid_shape[1]
 
         # Register default object renderers
         self.object_renderers: Dict[str, Callable[[np.ndarray, List[Any]], None]] = {}
@@ -92,27 +93,23 @@ class Grid2DRenderer(RendererInterface):
 
     def _create_base_image(self) -> np.ndarray:
         # Create a base image filled with the background color
-        img = np.ones((self.img_size, self.img_size, 3), np.uint8) * np.array(
+        img = np.ones((self.img_height, self.img_width, 3), np.uint8) * np.array(
             self.BACKGROUND_COLOR, dtype=np.uint8
         )
         return img
 
     def _render_gridlines(self, img: np.ndarray) -> None:
-        # Draw grid lines over the image
-        for i in range(0, self.img_size + 1, self.block_size):
-            cv.line(img, (0, i), (self.img_size, i), self.GRID_LINE_COLOR, 1)
-            cv.line(img, (i, 0), (i, self.img_size), self.GRID_LINE_COLOR, 1)
-        cv.line(
+        # Draw horizontal grid lines
+        for i in range(0, self.img_height + 1, self.block_size):
+            cv.line(img, (0, i), (self.img_width, i), self.GRID_LINE_COLOR, 1)
+        # Draw vertical grid lines
+        for i in range(0, self.img_width + 1, self.block_size):
+            cv.line(img, (i, 0), (i, self.img_height), self.GRID_LINE_COLOR, 1)
+        # Draw outer border
+        cv.rectangle(
             img,
-            (self.img_size - 1, 0),
-            (self.img_size - 1, self.img_size - 1),
-            self.GRID_LINE_COLOR,
-            1,
-        )
-        cv.line(
-            img,
-            (0, self.img_size - 1),
-            (self.img_size - 1, self.img_size - 1),
+            (0, 0),
+            (self.img_width - 1, self.img_height - 1),
             self.GRID_LINE_COLOR,
             1,
         )
@@ -356,7 +353,7 @@ class Grid2DRenderer(RendererInterface):
     def create_visibility_mask(
         self, agent_pos, vision_range, egocentric=False, looking=None
     ):
-        mask = np.zeros((self.img_size, self.img_size, 4), dtype=np.uint8)
+        mask = np.zeros((self.img_height, self.img_width, 4), dtype=np.uint8)
         mask[:, :, 3] = self.FOG_COLOR[3]  # Set alpha channel for fog of war
         window_size = (2 * vision_range + 1) * self.block_size
         row_start_block = agent_pos[0] * self.block_size
@@ -395,9 +392,9 @@ class Grid2DRenderer(RendererInterface):
                 )
 
         v_start = max(0, v_start)
-        v_end = min(self.img_size, v_end)
+        v_end = min(self.img_height, v_end)
         h_start = max(0, h_start)
-        h_end = min(self.img_size, h_end)
+        h_end = min(self.img_width, h_end)
         mask[v_start:v_end, h_start:h_end, 3] = 0
         return mask
 
@@ -406,7 +403,7 @@ class Grid2DRenderer(RendererInterface):
         rgba_img[:, :, :3] = img
         rgba_img[:, :, 3] = 255
         combined_mask = np.full(
-            (self.img_size, self.img_size), self.FOG_COLOR[3], dtype=np.uint8
+            (self.img_height, self.img_width), self.FOG_COLOR[3], dtype=np.uint8
         )
         for agent in env.agents:
             if agent.field_of_view is not None:
@@ -469,14 +466,18 @@ class Grid2DRenderer(RendererInterface):
     ) -> np.ndarray:
         img = self._get_base_image_cached(env)
         self._render_agents(img, env, agent_idx, is_state_view)
-        template_size = self.img_size
-        padded_size = template_size + (2 * self.block_size)
-        template = np.ones((padded_size, padded_size, 3), dtype=np.uint8) * np.array(
+
+        # Create padded template with correct dimensions
+        padded_width = self.img_width + (2 * self.block_size)
+        padded_height = self.img_height + (2 * self.block_size)
+        template = np.ones((padded_height, padded_width, 3), dtype=np.uint8) * np.array(
             self.TEMPLATE_COLOR, dtype=np.uint8
         )
+
+        # Place the image in the center of the padded template
         template[
-            self.block_size : self.block_size + template_size,
-            self.block_size : self.block_size + template_size,
+            self.block_size : self.block_size + self.img_height,
+            self.block_size : self.block_size + self.img_width,
         ] = img
 
         x, y = env.agents[agent_idx].pos
@@ -518,9 +519,9 @@ class Grid2DRenderer(RendererInterface):
             )
 
         x_start = max(0, x_start)
-        x_end = min(padded_size, x_end)
+        x_end = min(padded_height, x_end)
         y_start = max(0, y_start)
-        y_end = min(padded_size, y_end)
+        y_end = min(padded_width, y_end)
         window = template[x_start:x_end, y_start:y_end]
         window = resize_obs(window, self.resolution, self.torch_obs)
 

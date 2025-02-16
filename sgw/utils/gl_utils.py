@@ -55,11 +55,16 @@ def render_plane(x, y, z, area, texture_id, repeat=4):
     glDisable(GL_TEXTURE_2D)
 
 
-def render_cube(x, y, z, texture):
+def render_cube(x, y, z, texture=None, color=None):
     glPushMatrix()
     glTranslatef(x, y, z)
-    glEnable(GL_TEXTURE_2D)
-    glBindTexture(GL_TEXTURE_2D, texture)
+
+    if texture is not None:
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, texture)
+    elif color is not None:
+        glDisable(GL_TEXTURE_2D)
+        glColor3f(*color)
 
     vertices = [
         (-0.5, -0.5, 0.5),
@@ -118,11 +123,15 @@ def render_cube(x, y, z, texture):
     glBegin(GL_QUADS)
     for i in range(0, len(vertices), 4):
         for j in range(4):
-            glTexCoord2f(*tex_coords[i + j])
+            if texture is not None:
+                glTexCoord2f(*tex_coords[i + j])
             glVertex3f(*vertices[i + j])
     glEnd()
 
-    glDisable(GL_TEXTURE_2D)
+    if texture is not None:
+        glDisable(GL_TEXTURE_2D)
+    elif color is not None:
+        glColor3f(1.0, 1.0, 1.0)  # Reset color to white
     glPopMatrix()
 
 

@@ -18,8 +18,8 @@ class GridSymbolicRenderer(RendererInterface):
         "fruits": 8,
     }
 
-    def __init__(self, grid_size: int, window_size: int = None):
-        self.grid_size = grid_size
+    def __init__(self, grid_shape: Tuple[int, int], window_size: int = None):
+        self.grid_shape = grid_shape
         self.window_size = window_size
         self.num_channels = len(self.OBJECT_CHANNELS)
 
@@ -27,7 +27,7 @@ class GridSymbolicRenderer(RendererInterface):
     def observation_space(self) -> spaces.Space:
         """Return the observation space for symbolic observations."""
         if self.window_size is None:
-            shape = (self.grid_size, self.grid_size, self.num_channels)
+            shape = (self.grid_shape[1], self.grid_shape[0], self.num_channels)
         else:
             window_dim = 2 * self.window_size + 1
             shape = (window_dim, window_dim, self.num_channels)
@@ -39,7 +39,7 @@ class GridSymbolicRenderer(RendererInterface):
         The tensor shape is dynamic based on the number of object types.
         Each channel corresponds to a different object type as defined in OBJECT_CHANNELS.
         """
-        grid = np.zeros([self.grid_size, self.grid_size, self.num_channels])
+        grid = np.zeros([self.grid_shape[1], self.grid_shape[0], self.num_channels])
 
         # Set agents' positions
         for i, agent in enumerate(env.agents):
@@ -73,7 +73,7 @@ class GridSymbolicRenderer(RendererInterface):
 
     def render_walls(self, walls: List[List[int]]) -> np.ndarray:
         """Returns a numpy array of the walls in the environment."""
-        grid = np.zeros([self.grid_size, self.grid_size])
+        grid = np.zeros([self.grid_shape[1], self.grid_shape[0]])
         for block in walls:
             grid[block[0], block[1]] = 1
         return grid

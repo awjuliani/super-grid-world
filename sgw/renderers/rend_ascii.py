@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Any, Dict
+from typing import Any, Tuple
 from sgw.renderers.rend_interface import RendererInterface
 from gym import spaces
 
@@ -24,8 +24,8 @@ class GridASCIIRenderer(RendererInterface):
     # Object types and their corresponding grid values
     GRID_VALUES = {obj_type: i for i, obj_type in enumerate(ASCII_MAP.keys())}
 
-    def __init__(self, grid_size: int):
-        self.grid_size = grid_size
+    def __init__(self, grid_shape: Tuple[int, int]):
+        self.grid_shape = grid_shape
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -37,7 +37,7 @@ class GridASCIIRenderer(RendererInterface):
         Returns an ASCII string representation of the environment.
         Each object type is represented by a unique ASCII character as defined in ASCII_MAP.
         """
-        grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
+        grid = np.zeros((self.grid_shape[1], self.grid_shape[0]), dtype=int)
 
         # Set agents' positions
         for i, agent in enumerate(env.agents):

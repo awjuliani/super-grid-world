@@ -22,7 +22,7 @@ class SuperGridWorld(Env):
     def __init__(
         self,
         template_name: str = "empty",
-        grid_size: int = 11,
+        grid_shape: tuple = (11, 11),
         obs_type: ObsType = ObsType.visual_2d,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
@@ -31,59 +31,62 @@ class SuperGridWorld(Env):
         manual_collect: bool = False,
         resolution: int = 256,
         add_outer_walls: bool = True,
-        vision_range: int = 3,
-        num_agents: int = 1,  # New parameter for number of agents
+        field_of_view: int = None,
+        num_agents: int = 1,
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
-            seed, use_noop, manual_collect, add_outer_walls, vision_range, num_agents
+            seed, use_noop, manual_collect, add_outer_walls, field_of_view, num_agents
         )
 
         # Setup grid and walls
-        self._init_grid(template_name, grid_size)
+        self._init_grid(template_name, grid_shape)
 
         # Setup action and observation spaces
         self.set_action_space(control_type)
         self.set_obs_space(obs_type, torch_obs, resolution)
 
     def _init_basic_attrs(
-        self, seed, use_noop, manual_collect, add_outer_walls, vision_range, num_agents
+        self, seed, use_noop, manual_collect, add_outer_walls, field_of_view, num_agents
     ):
         self.rng = np.random.RandomState(seed)
         self.use_noop = use_noop
         self.manual_collect = manual_collect
         self.add_outer_walls = add_outer_walls
-        self.vision_range = vision_range
+        self.field_of_view = field_of_view
         self.num_agents = num_agents
         self.agents = [None] * num_agents  # List to store multiple agents
 
-    def _init_grid(self, template, size):
+    def _init_grid(self, template, grid_shape):
         self.agent_start_pos, self.template_objects = generate_layout(
-            template, size, self.add_outer_walls
+            template, grid_shape[0], grid_shape[1], self.add_outer_walls
         )
-        self.grid_size = size
+        self.grid_shape = grid_shape
 
     def _init_renderers(self, resolution, torch_obs):
         """Initialize renderers based on observation type."""
         renderer_map = {
             ObsType.visual_2d: lambda: Grid2DRenderer(
-                self.grid_size, resolution=resolution, torch_obs=torch_obs
-            ),
-            ObsType.visual_window: lambda: Grid2DRenderer(
-                self.grid_size,
-                window_size=self.vision_range,
+                grid_shape=self.grid_shape,
+                window_size=self.field_of_view,
                 resolution=resolution,
                 torch_obs=torch_obs,
             ),
-            ObsType.symbolic: lambda: GridSymbolicRenderer(self.grid_size),
-            ObsType.symbolic_window: lambda: GridSymbolicRenderer(
-                self.grid_size, window_size=self.vision_range
+            ObsType.symbolic: lambda: GridSymbolicRenderer(
+                grid_shape=self.grid_shape,
+                window_size=self.field_of_view,
             ),
             ObsType.visual_3d: lambda: Grid3DRenderer(
-                resolution=resolution, torch_obs=torch_obs
+                resolution=resolution,
+                torch_obs=torch_obs,
+                field_of_view=self.field_of_view,
             ),
-            ObsType.ascii: lambda: GridASCIIRenderer(self.grid_size),
-            ObsType.language: lambda: GridLangRenderer(self.grid_size),
+            ObsType.ascii: lambda: GridASCIIRenderer(
+                grid_shape=self.grid_shape,
+            ),
+            ObsType.language: lambda: GridLangRenderer(
+                grid_shape=self.grid_shape,
+            ),
         }
 
         if self.obs_type not in renderer_map:
@@ -91,6 +94,7 @@ class SuperGridWorld(Env):
 
         self.renderer = renderer_map[self.obs_type]()
         self.state_renderer = renderer_map[ObsType.visual_2d]()
+        self.state_renderer.window_size = None
 
     def set_action_space(self, control_type):
         """Set up the action space based on control type and optional actions."""
@@ -190,13 +194,13 @@ class SuperGridWorld(Env):
                     if agent_positions[i] is not None
                     else self.agent_start_pos
                 )
-            self.agents[i] = Agent(pos, field_of_view=self.vision_range)
+            self.agents[i] = Agent(pos, field_of_view=self.field_of_view)
 
     @property
     def free_spots(self):
         # Create set of all grid positions
         all_positions = {
-            (i, j) for i in range(self.grid_size) for j in range(self.grid_size)
+            (i, j) for i in range(self.grid_shape[0]) for j in range(self.grid_shape[1])
         }
         # Create set of occupied positions
         occupied_positions = {
@@ -227,8 +231,8 @@ class SuperGridWorld(Env):
         Checks if the target is a valid (movable) position.
         Returns True if the target is valid, False otherwise.
         """
-        x_check = -1 < target[0] < self.grid_size
-        y_check = -1 < target[1] < self.grid_size
+        x_check = -1 < target[0] < self.grid_shape[0]
+        y_check = -1 < target[1] < self.grid_shape[1]
 
         if not (x_check and y_check):
             return False
@@ -325,3 +329,11 @@ class SuperGridWorld(Env):
     def close(self) -> None:
         self.renderer.close()
         return super().close()
+
+    @property
+    def grid_width(self):
+        return self.grid_shape[0]
+
+    @property
+    def grid_height(self):
+        return self.grid_shape[1]

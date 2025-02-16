@@ -3,10 +3,8 @@ import enum
 
 class ObsType(enum.Enum):
     visual_2d = "visual_2d"
-    visual_window = "visual_window"
-    symbolic = "symbolic"
-    symbolic_window = "symbolic_window"
     visual_3d = "visual_3d"
+    symbolic = "symbolic"
     ascii = "ascii"
     language = "language"
 

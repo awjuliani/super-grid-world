@@ -2,14 +2,14 @@ import sgw.utils.base_utils as base_utils
 from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other
 
 
-def default_agent_start(grid_size, offset=2):
+def default_agent_start(height, width, offset=2):
     """Returns the default agent start position."""
-    return [grid_size - offset, grid_size - offset]
+    return [height - offset, width - offset]
 
 
-def grid_coords(grid_size):
+def grid_coords(width, height):
     """Generator for all grid coordinates as (i, j)."""
-    return ((i, j) for i in range(grid_size) for j in range(grid_size))
+    return ((i, j) for i in range(height) for j in range(width))
 
 
 def get_empty_objects(reward_pos=[1, 1], reward_value=1.0):
@@ -24,16 +24,24 @@ def get_empty_objects(reward_pos=[1, 1], reward_value=1.0):
     }
 
 
-def four_rooms(grid_size: int):
+def four_rooms(width: int, height: int):
     """Creates a four rooms layout."""
-    agent_start = default_agent_start(grid_size)
-    mid = grid_size // 2
+    agent_start = default_agent_start(width, height)
+    mid_w = width // 2
+    mid_h = height // 2
     # Adjust earl_mid and late_mid for grid sizes
-    earl_mid = mid // 2 + 1
-    late_mid = mid + earl_mid - (1 if grid_size == 11 else 2)
+    earl_mid_w = mid_w // 2 + 1
+    late_mid_w = mid_w + earl_mid_w - (1 if width == 11 else 2)
+    earl_mid_h = mid_h // 2 + 1
+    late_mid_h = mid_h + earl_mid_h - (1 if height == 11 else 2)
     # Vertical and horizontal block lines with removed bottlenecks
-    blocks = [[mid, i] for i in range(grid_size)] + [[i, mid] for i in range(grid_size)]
-    bottlenecks = [[mid, earl_mid], [mid, late_mid], [earl_mid, mid], [late_mid, mid]]
+    blocks = [[mid_h, i] for i in range(width)] + [[i, mid_w] for i in range(height)]
+    bottlenecks = [
+        [mid_h, earl_mid_w],
+        [mid_h, late_mid_w],
+        [earl_mid_h, mid_w],
+        [late_mid_h, mid_w],
+    ]
     blocks = [b for b in blocks if b not in bottlenecks]
     objects = get_empty_objects()
     return blocks, agent_start, objects
@@ -68,25 +76,25 @@ def four_rooms_split(grid_size: int):
     return blocks, agent_start, objects
 
 
-def empty(grid_size: int):
+def empty(width: int, height: int):
     """Returns an empty grid layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(width, height)
     blocks = []
     objects = get_empty_objects()
     return blocks, agent_start, objects
 
 
-def outer_ring(grid_size: int):
+def outer_ring(width: int, height: int):
     """Creates a layout with an outer ring of empty cells inside a block area."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(width, height)
     objects = get_empty_objects()
     extra_depth = 2
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(width, height)
         if not (
-            extra_depth < i < grid_size - 1 - extra_depth
-            and extra_depth < j < grid_size - 1 - extra_depth
+            extra_depth < i < height - 1 - extra_depth
+            and extra_depth < j < width - 1 - extra_depth
         )
     ]
     return blocks, agent_start, objects
@@ -94,12 +102,12 @@ def outer_ring(grid_size: int):
 
 def u_maze(grid_size: int):
     """Creates a U-shaped maze layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     objects = get_empty_objects(reward_pos=[grid_size - 2, 1])
     extra_depth = 2
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if i > extra_depth and extra_depth < j < grid_size - 1 - extra_depth
     ]
     return blocks, agent_start, objects
@@ -109,7 +117,7 @@ def two_rooms(grid_size: int):
     """Creates a two rooms layout with door and key."""
     mid = grid_size // 2
     half_mid = mid // 2
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     objects = {
         "rewards": [Reward([1, mid], 1.0)],
         "markers": [],
@@ -130,7 +138,7 @@ def two_rooms(grid_size: int):
 
 def obstacle(grid_size: int):
     """Creates an obstacle layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     mid = grid_size // 2
     if grid_size == 11:
         blocks = [[mid, i] for i in range(2, grid_size - 2)]
@@ -142,7 +150,7 @@ def obstacle(grid_size: int):
 
 def s_maze(grid_size: int):
     """Creates an S-shaped maze layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     mid_a = grid_size // 3
     mid_b = (2 * grid_size // 3) + 1
     blocks_a = [[i, mid_a] for i in range(grid_size // 2 + 1 + grid_size // 4)]
@@ -154,7 +162,7 @@ def s_maze(grid_size: int):
 
 def hairpin(grid_size: int):
     """Creates a hairpin maze layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     mid_a = grid_size // 5
     mid_b = 2 * (grid_size // 5)
     mid_c = 3 * (grid_size // 5)
@@ -173,7 +181,7 @@ def circle(grid_size: int):
     agent_start = [grid_size - 2, grid_size // 2]
     objects = get_empty_objects(reward_pos=[1, grid_size // 2])
     mask = base_utils.create_circular_mask(grid_size, grid_size)
-    blocks = [[i, j] for i, j in grid_coords(grid_size) if mask[i, j] == 0]
+    blocks = [[i, j] for i, j in grid_coords(grid_size, grid_size) if mask[i, j] == 0]
     return blocks, agent_start, objects
 
 
@@ -187,7 +195,7 @@ def ring(grid_size: int):
     )
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if big_mask[i, j] == 0 or small_mask[i, j] != 0
     ]
     return blocks, agent_start, objects
@@ -202,7 +210,7 @@ def t_maze(grid_size: int):
     middle = grid_size // 2
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if i >= width + 1 and (j < middle - half_width or j > middle + half_width)
     ]
     return blocks, agent_start, objects
@@ -210,14 +218,14 @@ def t_maze(grid_size: int):
 
 def i_maze(grid_size: int):
     """Creates an I-shaped maze layout."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     objects = get_empty_objects()
     width = 3
     half_width = width // 2
     middle = grid_size // 2
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if width + 1 <= i <= grid_size - width - 2
         and (j < middle - half_width or j > middle + half_width)
     ]
@@ -226,12 +234,12 @@ def i_maze(grid_size: int):
 
 def hallways(grid_size: int):
     """Creates a hallways layout by carving out inner lines."""
-    agent_start = default_agent_start(grid_size)
+    agent_start = default_agent_start(grid_size, grid_size)
     objects = get_empty_objects()
     extra = 1
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if (extra < i < grid_size - extra - 1 and extra < j < grid_size - extra - 1)
         and not (i == grid_size // 2 or j == grid_size // 2)
     ]
@@ -245,7 +253,7 @@ def detour(grid_size: int):
     extra = 1
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if extra < i < grid_size - 1 - extra and extra < j < grid_size - 1 - extra
     ]
     # Remove entire center column
@@ -260,7 +268,7 @@ def detour_block(grid_size: int):
     extra = 1
     blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
+        for i, j in grid_coords(grid_size, grid_size)
         if extra < i < grid_size - 1 - extra and extra < j < grid_size - 1 - extra
     ]
     # Remove center column except the middle cell
@@ -363,27 +371,28 @@ TEMPLATES = {
 
 def generate_layout(
     template: str = "empty",
-    grid_size: int = 11,
+    height: int = 11,
+    width: int = 11,
     add_outer_walls: bool = True,
 ):
-    """Generates the maze layout based on template and grid size."""
+    """Generates the maze layout based on template and grid dimensions."""
     if template not in TEMPLATES:
         raise ValueError(
             f"Unknown template: {template}. Valid templates are: {list(TEMPLATES.keys())}"
         )
-    blocks, agent_start, objects = TEMPLATES[template](grid_size)
+    blocks, agent_start, objects = TEMPLATES[template](width, height)
     if add_outer_walls:
-        blocks = add_outer(blocks, grid_size)
+        blocks = add_outer(blocks, width, height)
     objects["walls"] = [Wall(pos) for pos in blocks]
     return agent_start, objects
 
 
-def add_outer(blocks: list, grid_size: int):
+def add_outer(blocks: list, width: int, height: int):
     """Adds an outer border to the blocks."""
     outer_blocks = [
         [i, j]
-        for i, j in grid_coords(grid_size)
-        if i == 0 or i == grid_size - 1 or j == 0 or j == grid_size - 1
+        for i, j in grid_coords(width, height)
+        if i == 0 or i == height - 1 or j == 0 or j == width - 1
     ]
     blocks.extend(outer_blocks)
     return blocks

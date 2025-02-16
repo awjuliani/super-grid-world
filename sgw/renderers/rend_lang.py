@@ -1,13 +1,13 @@
 import numpy as np
 from sgw.renderers.rend_interface import RendererInterface
-from typing import Any
+from typing import Any, Tuple
 from gym import spaces
 from sgw.enums import ControlType
 
 
 class GridLangRenderer(RendererInterface):
-    def __init__(self, grid_size: int):
-        self.grid_size = grid_size
+    def __init__(self, grid_shape: Tuple[int, int]):
+        self.grid_shape = grid_shape
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -16,21 +16,22 @@ class GridLangRenderer(RendererInterface):
 
     def _get_region(self, pos):
         """Helper method to determine region in the maze."""
-        third = self.grid_size / 3
+        third_width = self.grid_shape[0] / 3
+        third_height = self.grid_shape[1] / 3
         x, y = pos[1], pos[0]
 
         # Determine vertical region (north/center/south)
-        if y < third:
+        if y < third_height:
             v_region = "north"
-        elif y > 2 * third:
+        elif y > 2 * third_height:
             v_region = "south"
         else:
             v_region = "center"
 
         # Determine horizontal region (west/center/east)
-        if x < third:
+        if x < third_width:
             h_region = "west"
-        elif x > 2 * third:
+        elif x > 2 * third_width:
             h_region = "east"
         else:
             h_region = "center"
@@ -161,7 +162,7 @@ class GridLangRenderer(RendererInterface):
             descriptions.append(
                 f"{pronouns['subject'].capitalize()} {pronouns['be']} against the north wall of the maze."
             )
-        elif agent_pos[0] == self.grid_size - 1:  # South wall
+        elif agent_pos[0] == self.grid_shape[1] - 1:  # South wall
             descriptions.append(
                 f"{pronouns['subject'].capitalize()} {pronouns['be']} against the south wall of the maze."
             )
@@ -170,7 +171,7 @@ class GridLangRenderer(RendererInterface):
             descriptions.append(
                 f"{pronouns['subject'].capitalize()} {pronouns['be']} against the west wall of the maze."
             )
-        elif agent_pos[1] == self.grid_size - 1:  # East wall
+        elif agent_pos[1] == self.grid_shape[0] - 1:  # East wall
             descriptions.append(
                 f"{pronouns['subject'].capitalize()} {pronouns['be']} against the east wall of the maze."
             )
@@ -239,7 +240,7 @@ class GridLangRenderer(RendererInterface):
             inventory_text = f"{pronouns['subject'].capitalize()} {pronouns['be']} not carrying anything."
 
         base_description = (
-            f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_size}x{self.grid_size} meter maze. "
+            f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_shape[0]}x{self.grid_shape[1]} meter maze. "
             f"\n{orientation_desc}"
             f"\n{inventory_text} "
             f"\n{pronouns['subject'].capitalize()} can only see objects up to {agent.field_of_view} {'meter' if agent.field_of_view == 1 else 'meters'} away."
