@@ -216,4 +216,4 @@ class Sign(Object):
 
     def interact(self, agent):
         super().interact(agent)
-        return f"The sign reads: {self.message}"
+        return f"The sign reads: '{self.message}'"

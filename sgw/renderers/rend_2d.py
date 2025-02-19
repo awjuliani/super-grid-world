@@ -333,7 +333,7 @@ class Grid2DRenderer(RendererInterface):
 
             # Draw the sign post
             post_width = self.block_size // 6
-            post_height = self.block_size // 2
+            post_height = self.block_size // 3
             post_start = (center_x - post_width // 2, center_y)
             post_end = (center_x + post_width // 2, center_y + post_height)
             cv.rectangle(img, post_start, post_end, self.SIGN_BORDER, -1)
