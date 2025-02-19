@@ -9,6 +9,8 @@ from sgw.utils.gl_utils import (
     render_plane,
     render_cube,
     render_sphere,
+    render_cylinder,
+    render_torus,
 )
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
@@ -78,6 +80,9 @@ class Grid3DRenderer(RendererInterface):
                 "wood": "wood.png",
                 "key": "key.png",
                 "warp": "warp.png",
+                "tree": "tree.png",
+                "fruit": "fruit.png",
+                "sign": "sign.png",
             }.items()
         }
 
@@ -108,7 +113,9 @@ class Grid3DRenderer(RendererInterface):
                 texture = (
                     self.textures["gem"] if reward_val > 0 else self.textures["gem_bad"]
                 )
-                render_sphere(reward.pos[0], 0.0, reward.pos[1], 0.25, texture=texture)
+                render_sphere(
+                    reward.pos[0], -0.25, reward.pos[1], 0.25, texture=texture
+                )
 
         # Render doors
         if "doors" in env.objects:
@@ -118,9 +125,28 @@ class Grid3DRenderer(RendererInterface):
         # Render keys
         if "keys" in env.objects:
             for key in env.objects["keys"]:
-                render_sphere(
-                    key.pos[0], -0.1, key.pos[1], 0.1, texture=self.textures["key"]
+                # Draw key handle using torus primitive
+                glPushMatrix()
+                glTranslatef(key.pos[0], -0.25, key.pos[1])
+                glRotatef(90, 0, 0, 1)  # Rotate to orient torus in horizontal plane
+                render_torus(
+                    0.04, 0.15, nsides=16, rings=16, texture=self.textures["key"]
                 )
+                glPopMatrix()
+
+                # Draw shaft using cylinder primitive
+                glPushMatrix()
+                glTranslatef(key.pos[0] + 0.15, -0.25, key.pos[1])
+                glRotatef(90, 0, 0, 1)  # Rotate so that the cylinder lies horizontally
+                render_cylinder(0, 0, 0, 0.05, 0.3, texture=self.textures["key"])
+                glPopMatrix()
+
+                # Draw teeth
+                glPushMatrix()
+                glTranslatef(key.pos[0] + 0.3, -0.25, key.pos[1])
+                glScalef(0.1, 0.05, 0.15)
+                render_cube(0, 0, 0, self.textures["key"])
+                glPopMatrix()
 
         # Render warps
         if "warps" in env.objects:
@@ -128,6 +154,27 @@ class Grid3DRenderer(RendererInterface):
                 render_sphere(
                     warp.pos[0], -0.5, warp.pos[1], 0.33, texture=self.textures["warp"]
                 )
+
+        # Render trees
+        if "trees" in env.objects:
+            for tree in env.objects["trees"]:
+                self._render_tree(tree.pos[0], tree.pos[1])
+
+        # Render fruits
+        if "fruits" in env.objects:
+            for fruit in env.objects["fruits"]:
+                render_sphere(
+                    fruit.pos[0],
+                    -0.3,
+                    fruit.pos[1],
+                    0.2,
+                    texture=self.textures["fruit"],
+                )
+
+        # Render signs
+        if "signs" in env.objects:
+            for sign in env.objects["signs"]:
+                self._render_sign(sign.pos[0], sign.pos[1])
 
         # Render other agents (excluding current agent)
         current_agent = (
@@ -138,11 +185,46 @@ class Grid3DRenderer(RendererInterface):
         for i, agent in enumerate(env.agents):
             if agent is not None and agent != current_agent:
                 render_cube(
-                    agent.pos[0], 0.0, agent.pos[1], None, color=(0.5, 0.5, 0.5)
+                    agent.pos[0], -0.5, agent.pos[1], None, color=(0.5, 0.5, 0.5)
                 )
 
         glEndList()
         return list_id
+
+    def _render_tree(self, x, z):
+        """Render a tree with a trunk and conical crown."""
+        # Render trunk
+        glPushMatrix()
+        glTranslatef(x, -0.5, z)  # Start at ground level
+        render_cylinder(0, 0, 0, 0.1, 1.0, texture=self.textures["tree"])
+        glPopMatrix()
+
+        # Render crown (cone-like shape made of cubes)
+        crown_height = 1.5
+        crown_layers = 3
+        for i in range(crown_layers):
+            layer_scale = 1.0 - (i / crown_layers)
+            glPushMatrix()
+            glTranslatef(x, 0.5 + (i * 0.5), z)  # Adjusted to start at top of trunk
+            glScalef(layer_scale, 0.4, layer_scale)
+            render_cube(0, 0, 0, self.textures["tree"])
+            glPopMatrix()
+
+    def _render_sign(self, x, z):
+        """Render a sign with a post and board."""
+        # Render post
+        glPushMatrix()
+        glTranslatef(x, -0.5, z)  # Start at ground level
+        glScalef(0.1, 0.8, 0.1)
+        render_cube(0, 0.5, 0, self.textures["wood"])
+        glPopMatrix()
+
+        # Render board
+        glPushMatrix()
+        glTranslatef(x, 0.3, z)  # Adjusted to be at appropriate height from ground
+        glScalef(0.6, 0.4, 0.1)
+        render_cube(0, 0, 0, self.textures["sign"])
+        glPopMatrix()
 
     def render_frame(self, env, agent_idx=0, is_state_view=False):
         glfw.make_context_current(self.window)  # Make context current

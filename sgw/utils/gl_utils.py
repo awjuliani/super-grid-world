@@ -155,3 +155,34 @@ def render_sphere(x, y, z, radius, slices=16, stacks=16, texture=None):
         glDisable(GL_TEXTURE_2D)
 
     glPopMatrix()
+
+
+def render_cylinder(x, y, z, radius, height, texture=None, slices=32, stacks=1):
+    # Render a cylinder at position (x,y,z) with given radius and height, aligned along the y-axis
+    glPushMatrix()
+    glTranslatef(x, y, z)
+    glRotatef(-90, 1, 0, 0)  # rotate to align cylinder axis from z to y
+    quadric = gluNewQuadric()
+    if texture is not None:
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, texture)
+        gluQuadricTexture(quadric, GL_TRUE)
+    gluCylinder(quadric, radius, radius, height, slices, stacks)
+    gluDeleteQuadric(quadric)
+    if texture is not None:
+        glDisable(GL_TEXTURE_2D)
+    glPopMatrix()
+
+
+def render_torus(inner_radius, outer_radius, nsides=16, rings=30, texture=None):
+    # Render a torus using GLUT's solid torus; inner_radius is the tube radius, outer_radius is the distance from center to tube center.
+    from OpenGL.GLUT import glutSolidTorus
+
+    glPushMatrix()
+    if texture is not None:
+        glEnable(GL_TEXTURE_2D)
+        glBindTexture(GL_TEXTURE_2D, texture)
+    glutSolidTorus(inner_radius, outer_radius, nsides, rings)
+    if texture is not None:
+        glDisable(GL_TEXTURE_2D)
+    glPopMatrix()

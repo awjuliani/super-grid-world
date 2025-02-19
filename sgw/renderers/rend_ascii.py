@@ -19,6 +19,7 @@ class GridASCIIRenderer(RendererInterface):
         "other": "O",
         "trees": "T",
         "fruits": "F",
+        "signs": "S",
     }
 
     # Object types and their corresponding grid values

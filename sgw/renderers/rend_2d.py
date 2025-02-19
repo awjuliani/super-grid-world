@@ -33,6 +33,8 @@ class Grid2DRenderer(RendererInterface):
     TREE_BORDER = (0, 100, 0)  # Dark green
     FRUIT_FILL = (255, 69, 0)  # Red-orange
     FRUIT_BORDER = (200, 50, 0)
+    SIGN_FILL = (139, 69, 19)  # Saddle brown
+    SIGN_BORDER = (101, 67, 33)  # Dark brown
 
     def __init__(
         self,
@@ -65,6 +67,7 @@ class Grid2DRenderer(RendererInterface):
         self.register_renderer("other", self._render_other)
         self.register_renderer("trees", self._render_trees)
         self.register_renderer("fruits", self._render_fruits)
+        self.register_renderer("signs", self._render_signs)
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -171,23 +174,59 @@ class Grid2DRenderer(RendererInterface):
     def _render_keys(self, img: np.ndarray, keys: List[Key]) -> None:
         for key in keys:
             # Convert from grid coordinates (row, col) to screen coordinates (x, y)
-            center = (
-                key.pos[1] * self.block_size
-                + self.block_size // 2,  # x = col * block_size
-                key.pos[0] * self.block_size
-                + self.block_size // 2,  # y = row * block_size
+            center_x = key.pos[1] * self.block_size + self.block_size // 2
+            center_y = key.pos[0] * self.block_size + self.block_size // 2
+
+            # Key dimensions
+            handle_outer_radius = self.block_size // 4
+            handle_inner_radius = self.block_size // 6
+            shaft_width = self.block_size // 8
+            shaft_length = self.block_size // 2
+            teeth_width = self.block_size // 4
+            teeth_height = self.block_size // 6
+
+            # Draw handle (donut shape using two circles)
+            cv.circle(
+                img,
+                (center_x - shaft_length // 2, center_y),
+                handle_outer_radius,
+                self.KEY_FILL,
+                -1,
             )
-            pts = np.array(
-                [
-                    [center[0], center[1] - 4],
-                    [center[0] + 4, center[1]],
-                    [center[0], center[1] + 4],
-                    [center[0] - 4, center[1]],
-                ],
-                np.int32,
+            cv.circle(
+                img,
+                (center_x - shaft_length // 2, center_y),
+                handle_inner_radius,
+                self.BACKGROUND_COLOR,
+                -1,
             )
-            cv.fillPoly(img, [pts], self.KEY_FILL)
-            cv.polylines(img, [pts], True, self.KEY_BORDER, 1)
+            cv.circle(
+                img,
+                (center_x - shaft_length // 2, center_y),
+                handle_outer_radius,
+                self.KEY_BORDER,
+                1,
+            )
+            cv.circle(
+                img,
+                (center_x - shaft_length // 2, center_y),
+                handle_inner_radius,
+                self.KEY_BORDER,
+                1,
+            )
+
+            # Draw shaft (rectangle)
+            shaft_start = (center_x - shaft_length // 2, center_y - shaft_width // 2)
+            shaft_end = (center_x + shaft_length // 2, center_y + shaft_width // 2)
+            cv.rectangle(img, shaft_start, shaft_end, self.KEY_FILL, -1)
+            cv.rectangle(img, shaft_start, shaft_end, self.KEY_BORDER, 1)
+
+            # Draw teeth (small rectangles)
+            teeth_x = center_x + shaft_length // 4
+            teeth_start = (teeth_x, center_y - teeth_height)
+            teeth_end = (teeth_x + teeth_width, center_y + teeth_height)
+            cv.rectangle(img, teeth_start, teeth_end, self.KEY_FILL, -1)
+            cv.rectangle(img, teeth_start, teeth_end, self.KEY_BORDER, 1)
 
     def _render_doors(self, img: np.ndarray, doors: List[Door]) -> None:
         for door in doors:
@@ -284,6 +323,30 @@ class Grid2DRenderer(RendererInterface):
             radius = self.block_size // 4
             cv.circle(img, center, radius, self.FRUIT_FILL, -1)
             cv.circle(img, center, radius, self.FRUIT_BORDER, self.block_border - 1)
+
+    def _render_signs(self, img: np.ndarray, signs: List[Any]) -> None:
+        """Render sign objects as small rectangles with a post."""
+        for sign in signs:
+            # Convert from grid coordinates (row, col) to screen coordinates (x, y)
+            center_x = sign.pos[1] * self.block_size + self.block_size // 2
+            center_y = sign.pos[0] * self.block_size + self.block_size // 2
+
+            # Draw the sign post
+            post_width = self.block_size // 6
+            post_height = self.block_size // 2
+            post_start = (center_x - post_width // 2, center_y)
+            post_end = (center_x + post_width // 2, center_y + post_height)
+            cv.rectangle(img, post_start, post_end, self.SIGN_BORDER, -1)
+
+            # Draw the sign board
+            board_width = self.block_size // 2
+            board_height = self.block_size // 3
+            board_start = (center_x - board_width // 2, center_y - board_height)
+            board_end = (center_x + board_width // 2, center_y)
+            cv.rectangle(img, board_start, board_end, self.SIGN_FILL, -1)
+            cv.rectangle(
+                img, board_start, board_end, self.SIGN_BORDER, self.block_border - 1
+            )
 
     def _create_new_frame(self, env: Any) -> np.ndarray:
         img = self._create_base_image()

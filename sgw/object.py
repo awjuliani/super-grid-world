@@ -203,3 +203,17 @@ class Fruit(Object):
         super().interact(agent)
         agent.collect_object(self)
         return "Agent collected a fruit"
+
+
+class Sign(Object):
+    def __init__(self, pos, message):
+        super().__init__(pos, False, False, False)
+        self.message = message
+        self.name = "sign"
+
+    def copy(self):
+        return type(self)(list(self.pos), self.message)
+
+    def interact(self, agent):
+        super().interact(agent)
+        return f"The sign reads: {self.message}"
