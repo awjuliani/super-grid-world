@@ -35,6 +35,8 @@ class Grid2DRenderer(RendererInterface):
     FRUIT_BORDER = (200, 50, 0)
     SIGN_FILL = (139, 69, 19)  # Saddle brown
     SIGN_BORDER = (101, 67, 33)  # Dark brown
+    BOX_FILL = (160, 82, 45)  # Sienna brown
+    BOX_BORDER = (139, 69, 19)  # Saddle brown
 
     def __init__(
         self,
@@ -68,6 +70,7 @@ class Grid2DRenderer(RendererInterface):
         self.register_renderer("trees", self._render_trees)
         self.register_renderer("fruits", self._render_fruits)
         self.register_renderer("signs", self._render_signs)
+        self.register_renderer("boxes", self._render_boxes)
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -347,6 +350,18 @@ class Grid2DRenderer(RendererInterface):
             cv.rectangle(
                 img, board_start, board_end, self.SIGN_BORDER, self.block_border - 1
             )
+
+    def _render_boxes(self, img: np.ndarray, boxes: List[Any]) -> None:
+        """Render box objects as rectangles with a lid line."""
+        for box in boxes:
+            start, end = self.get_square_edges(box.pos)
+            # Draw main box
+            cv.rectangle(img, start, end, self.BOX_FILL, -1)
+            cv.rectangle(img, start, end, self.BOX_BORDER, self.block_border - 1)
+
+            # Draw lid line
+            lid_y = start[1] + (end[1] - start[1]) // 3
+            cv.line(img, (start[0], lid_y), (end[0], lid_y), self.BOX_BORDER, 2)
 
     def _create_new_frame(self, env: Any) -> np.ndarray:
         img = self._create_base_image()

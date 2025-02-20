@@ -27,7 +27,7 @@ class Action(enum.Enum):
     MOVE_FORWARD = (enum.auto(), "move_forward")
     # Optional actions for both types
     NOOP = (enum.auto(), "noop")
-    COLLECT = (enum.auto(), "collect")
+    INTERACT = (enum.auto(), "interact")
 
     def __init__(self, id, action_name):
         self._value_ = (id, action_name)
@@ -51,15 +51,15 @@ class Action(enum.Enum):
 
     @property
     def is_special(self):
-        """Check if action is a special action (noop/collect)."""
-        return self in [Action.NOOP, Action.COLLECT]
+        """Check if action is a special action (noop/interact)."""
+        return self in [Action.NOOP, Action.INTERACT]
 
     @classmethod
     def get_actions_for_control(
         cls,
         control_type: ControlType,
         use_noop: bool = False,
-        manual_collect: bool = False,
+        manual_interact: bool = False,
     ):
         """Get valid actions for a given control type."""
         if control_type == ControlType.allocentric:
@@ -69,8 +69,8 @@ class Action(enum.Enum):
 
         if use_noop:
             actions.append(cls.NOOP)
-        if manual_collect:
-            actions.append(cls.COLLECT)
+        if manual_interact:
+            actions.append(cls.INTERACT)
         return actions
 
     @classmethod

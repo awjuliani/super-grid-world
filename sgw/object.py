@@ -205,6 +205,32 @@ class Fruit(Object):
         return "Agent collected a fruit"
 
 
+class Box(Object):
+    def __init__(self, pos):
+        super().__init__(pos, False, False, False)
+        self.name = "box"
+        self.contents = []
+
+    def copy(self):
+        new_box = type(self)(list(self.pos))
+        new_box.contents = self.contents.copy()
+        return new_box
+
+    def interact(self, agent):
+        super().interact(agent)
+        if agent.inventory:
+            # Put item in box
+            item = agent.inventory.pop(0)  # Remove and get first item from inventory
+            self.contents.append(item)
+            return f"Agent put {item.name} in the box"
+        elif self.contents:
+            # Take item from box
+            item = self.contents.pop()  # Remove and get last item from box
+            agent.collect_object(item)
+            return f"Agent took {item.name} from the box"
+        return "Box is empty and agent has no items"
+
+
 class Sign(Object):
     def __init__(self, pos, message):
         super().__init__(pos, False, False, False)

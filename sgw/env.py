@@ -21,14 +21,14 @@ class SuperGridWorld(Env):
 
     def __init__(
         self,
-        template_name: str = "empty",
         grid_shape: tuple = (9, 9),
         obs_type: ObsType = ObsType.visual_2d,
         control_type: ControlType = ControlType.allocentric,
         seed: int = None,
+        template_name: str = "empty",
         use_noop: bool = False,
+        manual_interact: bool = False,
         torch_obs: bool = False,
-        manual_collect: bool = False,
         resolution: int = 256,
         add_outer_walls: bool = True,
         field_of_view: int = None,
@@ -36,7 +36,7 @@ class SuperGridWorld(Env):
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
-            seed, use_noop, manual_collect, add_outer_walls, field_of_view, num_agents
+            seed, use_noop, manual_interact, add_outer_walls, field_of_view, num_agents
         )
 
         # Setup grid and walls
@@ -47,11 +47,17 @@ class SuperGridWorld(Env):
         self.set_obs_space(obs_type, torch_obs, resolution)
 
     def _init_basic_attrs(
-        self, seed, use_noop, manual_collect, add_outer_walls, field_of_view, num_agents
+        self,
+        seed,
+        use_noop,
+        manual_interact,
+        add_outer_walls,
+        field_of_view,
+        num_agents,
     ):
         self.rng = np.random.RandomState(seed)
         self.use_noop = use_noop
-        self.manual_collect = manual_collect
+        self.manual_interact = manual_interact
         self.add_outer_walls = add_outer_walls
         self.field_of_view = field_of_view
         self.num_agents = num_agents
@@ -102,7 +108,7 @@ class SuperGridWorld(Env):
         self.control_type = control_type
         # Get valid actions using the Action enum helper
         self.valid_actions = Action.get_actions_for_control(
-            control_type, self.use_noop, self.manual_collect
+            control_type, self.use_noop, self.manual_interact
         )
         # Create action space for each agent
         self.action_space = spaces.Tuple(
@@ -273,7 +279,7 @@ class SuperGridWorld(Env):
             if self.stochasticity > self.rng.rand():
                 action = self.rng.randint(0, len(self.valid_actions))
 
-            # Process action and determine if collection is allowed
+            # Process action and determine if interaction is allowed
             self._move_agent(action, i)
 
             # Process object interactions
@@ -294,12 +300,12 @@ class SuperGridWorld(Env):
 
         return self.observation, rewards, dones, {"events": self.events}
 
-    def _determine_can_collect(self, action: int) -> bool:
-        """Determines if collection is allowed based on action and manual_collect setting."""
-        if not self.manual_collect:
+    def _determine_can_interact(self, action: int) -> bool:
+        """Determines if interaction is allowed based on action and manual_interact setting."""
+        if not self.manual_interact:
             return True
         chosen_action = self.valid_actions[action]
-        return chosen_action == Action.COLLECT
+        return chosen_action == Action.INTERACT
 
     def _find_object_at(self, pos):
         """Find the first object at the given position."""
@@ -348,7 +354,7 @@ class SuperGridWorld(Env):
         # Check all object types for interactions
         for obj_type in self.objects.values():
             obj = next((o for o in obj_type if o == agent_pos), None)
-            if obj and self._determine_can_collect(action):
+            if obj and self._determine_can_interact(action):
                 # Interact with the object and handle any events
                 event = obj.interact(agent)
                 if event:

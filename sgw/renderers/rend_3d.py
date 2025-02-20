@@ -83,6 +83,7 @@ class Grid3DRenderer(RendererInterface):
                 "tree": "tree.png",
                 "fruit": "fruit.png",
                 "sign": "sign.png",
+                "box": "wood.png",  # Reuse wood texture for box
             }.items()
         }
 
@@ -176,6 +177,11 @@ class Grid3DRenderer(RendererInterface):
             for sign in env.objects["signs"]:
                 self._render_sign(sign.pos[0], sign.pos[1])
 
+        # Render boxes
+        if "boxes" in env.objects:
+            for box in env.objects["boxes"]:
+                self._render_box(box.pos[0], box.pos[1])
+
         # Render other agents (excluding current agent)
         current_agent = (
             env.agents[self._current_agent_idx]
@@ -224,6 +230,22 @@ class Grid3DRenderer(RendererInterface):
         glTranslatef(x, 0.3, z)  # Adjusted to be at appropriate height from ground
         glScalef(0.6, 0.4, 0.1)
         render_cube(0, 0, 0, self.textures["sign"])
+        glPopMatrix()
+
+    def _render_box(self, x, z):
+        """Render a box as a cube with a lid line."""
+        # Render main box
+        glPushMatrix()
+        glTranslatef(x, -0.25, z)  # Slightly raised from ground
+        glScalef(0.8, 0.5, 0.8)  # Make it shorter than a full cube
+        render_cube(0, 0, 0, self.textures["box"])
+        glPopMatrix()
+
+        # Render lid (thin rectangle on top)
+        glPushMatrix()
+        glTranslatef(x, 0.0, z)  # At the top of the box
+        glScalef(0.8, 0.1, 0.8)  # Thin lid
+        render_cube(0, 0, 0, self.textures["box"])
         glPopMatrix()
 
     def render_frame(self, env, agent_idx=0, is_state_view=False):
