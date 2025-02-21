@@ -145,11 +145,20 @@ class GridLangRenderer(RendererInterface):
                     pos, agent_pos, field_of_view, agent_looking
                 ):
                     continue
-            descriptions.append(
-                f"There is a {item_type} at {pronouns['possessive']} position."
-                if direction == "same position"
-                else f"There is a {item_type} {direction} {pronouns['subject']}, {distance} {'meter' if distance == 1 else 'meters'} away."
-            )
+            
+            # Choose description format based on perspective
+            if first_person:
+                descriptions.append(
+                    f"You see a {item_type} at your position."
+                    if direction == "same position"
+                    else f"You see a {item_type} {direction} you, {distance} {'meter' if distance == 1 else 'meters'} away."
+                )
+            else:
+                descriptions.append(
+                    f"There is a {item_type} at {pronouns['possessive']} position."
+                    if direction == "same position"
+                    else f"There is a {item_type} {direction} {pronouns['subject']}, {distance} {'meter' if distance == 1 else 'meters'} away."
+                )
 
         return descriptions
 
@@ -243,7 +252,7 @@ class GridLangRenderer(RendererInterface):
             f"{pronouns['subject'].capitalize()} {pronouns['be']} in the {self._get_region(agent_pos)} region of a {self.grid_shape[0]}x{self.grid_shape[1]} meter maze. "
             f"\n{orientation_desc}"
             f"\n{inventory_text} "
-            f"\n{pronouns['subject'].capitalize()} can only see objects up to {agent.field_of_view} {'meter' if agent.field_of_view == 1 else 'meters'} away."
+            f"\n{pronouns['subject'].capitalize()} can only see objects up to {agent.field_of_view} {'meter' if agent.field_of_view == 1 else 'meters'} away. Objects further away than that are not visible."
         )
 
         # Get boundary descriptions

@@ -5,7 +5,7 @@ from sgw.enums import Action, ControlType, ObsType
 import argparse
 
 
-def get_action_from_key(key, control_type, manual_collect):
+def get_action_from_key(key, control_type, manual_interact):
     """Map keyboard input to game actions."""
     if control_type == ControlType.allocentric:
         # Allocentric controls (absolute directions)
@@ -24,7 +24,7 @@ def get_action_from_key(key, control_type, manual_collect):
         }
 
     # Add collect action if manual collection is enabled
-    if manual_collect:
+    if manual_interact:
         key_to_action[ord("e")] = Action.COLLECT
 
     # Add quit key
@@ -38,8 +38,8 @@ def play_game():
     parser.add_argument(
         "--template",
         type=str,
-        default="two_rooms",
-        help="Template name for the environment (default: two_rooms)",
+        default="four_rooms",
+        help="Template name for the environment (default: four_rooms)",
     )
     parser.add_argument(
         "--obs_type",
@@ -56,9 +56,9 @@ def play_game():
         help="Control type (default: allocentric)",
     )
     parser.add_argument(
-        "--manual_collect",
+        "--manual_interact",
         action="store_true",
-        help="Enable manual collection with E key",
+        help="Enable manual interaction with E key",
     )
     parser.add_argument(
         "--resolution", type=int, default=512, help="Display resolution (default: 512)"
@@ -69,9 +69,10 @@ def play_game():
     env = SuperGridWorld(
         template_name=args.template,
         control_type=ControlType(args.control),
-        manual_collect=args.manual_collect,
+        manual_interact=args.manual_interact,
         resolution=args.resolution,
         obs_type=ObsType(args.obs_type),
+        field_of_view=2,
     )
 
     # Reset environment
@@ -91,7 +92,7 @@ def play_game():
         print("W: Move Forward")
         print("A: Rotate Left")
         print("D: Rotate Right")
-    if args.manual_collect:
+    if args.manual_interact:
         print("E: Collect/Interact")
     print("Q: Quit")
     print("\nEvents will be displayed in the terminal.")
@@ -108,7 +109,7 @@ def play_game():
         # Get keyboard input
         key = cv2.waitKey(100) & 0xFF
         action = get_action_from_key(
-            key, ControlType(args.control), args.manual_collect
+            key, ControlType(args.control), args.manual_interact
         )
 
         if action == "QUIT":
