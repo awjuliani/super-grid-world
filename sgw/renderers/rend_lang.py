@@ -145,7 +145,7 @@ class GridLangRenderer(RendererInterface):
                     pos, agent_pos, field_of_view, agent_looking
                 ):
                     continue
-            
+
             # Choose description format based on perspective
             if first_person:
                 descriptions.append(

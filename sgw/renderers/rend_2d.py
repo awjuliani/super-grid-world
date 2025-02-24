@@ -37,6 +37,8 @@ class Grid2DRenderer(RendererInterface):
     SIGN_BORDER = (101, 67, 33)  # Dark brown
     BOX_FILL = (160, 82, 45)  # Sienna brown
     BOX_BORDER = (139, 69, 19)  # Saddle brown
+    PUSHABLE_BOX_FILL = (205, 133, 63)  # Peru (lighter brown)
+    PUSHABLE_BOX_BORDER = (160, 82, 45)  # Sienna brown
 
     def __init__(
         self,
@@ -71,6 +73,7 @@ class Grid2DRenderer(RendererInterface):
         self.register_renderer("fruits", self._render_fruits)
         self.register_renderer("signs", self._render_signs)
         self.register_renderer("boxes", self._render_boxes)
+        self.register_renderer("pushable_boxes", self._render_pushable_boxes)
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -180,56 +183,72 @@ class Grid2DRenderer(RendererInterface):
             center_x = key.pos[1] * self.block_size + self.block_size // 2
             center_y = key.pos[0] * self.block_size + self.block_size // 2
 
-            # Key dimensions
-            handle_outer_radius = self.block_size // 4
-            handle_inner_radius = self.block_size // 6
-            shaft_width = self.block_size // 8
-            shaft_length = self.block_size // 2
-            teeth_width = self.block_size // 4
-            teeth_height = self.block_size // 6
+            # Calculate key dimensions based on block size
+            key_head_radius_outer = self.block_size // 5
+            key_head_radius_inner = self.block_size // 10
+            key_stem_length = self.block_size // 3
+            key_stem_width = self.block_size // 8
+            key_tooth_width = self.block_size // 10
+            key_tooth_height = self.block_size // 10
 
-            # Draw handle (donut shape using two circles)
+            # Draw key head (donut shape - outer circle)
+            head_center = (center_x - key_stem_length // 3, center_y)
+            cv.circle(img, head_center, key_head_radius_outer, self.KEY_FILL, -1)
             cv.circle(
                 img,
-                (center_x - shaft_length // 2, center_y),
-                handle_outer_radius,
+                head_center,
+                key_head_radius_outer,
+                self.KEY_BORDER,
+                self.block_border - 2,
+            )
+
+            # Draw inner circle (hole) to create donut effect
+            cv.circle(
+                img, head_center, key_head_radius_inner, self.BACKGROUND_COLOR, -1
+            )
+            cv.circle(img, head_center, key_head_radius_inner, self.KEY_BORDER, 1)
+
+            # Draw key stem (rectangle) - starting at the right edge of the donut
+            stem_start_x = head_center[0] + key_head_radius_outer
+            stem_end_x = center_x + key_stem_length * 2 // 2
+            stem_start_y = center_y - key_stem_width // 2
+            stem_end_y = center_y + key_stem_width // 2
+
+            cv.rectangle(
+                img,
+                (stem_start_x, stem_start_y),
+                (stem_end_x, stem_end_y),
                 self.KEY_FILL,
                 -1,
             )
-            cv.circle(
+            cv.rectangle(
                 img,
-                (center_x - shaft_length // 2, center_y),
-                handle_inner_radius,
-                self.BACKGROUND_COLOR,
+                (stem_start_x, stem_start_y),
+                (stem_end_x, stem_end_y),
+                self.KEY_BORDER,
+                1,
+            )
+
+            # Draw single downward tooth
+            tooth_start_x = stem_end_x - key_tooth_width
+            tooth_end_x = stem_end_x
+            tooth_start_y = stem_end_y
+            tooth_end_y = stem_end_y + key_tooth_height
+
+            cv.rectangle(
+                img,
+                (tooth_start_x, tooth_start_y),
+                (tooth_end_x, tooth_end_y),
+                self.KEY_FILL,
                 -1,
             )
-            cv.circle(
+            cv.rectangle(
                 img,
-                (center_x - shaft_length // 2, center_y),
-                handle_outer_radius,
+                (tooth_start_x, tooth_start_y),
+                (tooth_end_x, tooth_end_y),
                 self.KEY_BORDER,
                 1,
             )
-            cv.circle(
-                img,
-                (center_x - shaft_length // 2, center_y),
-                handle_inner_radius,
-                self.KEY_BORDER,
-                1,
-            )
-
-            # Draw shaft (rectangle)
-            shaft_start = (center_x - shaft_length // 2, center_y - shaft_width // 2)
-            shaft_end = (center_x + shaft_length // 2, center_y + shaft_width // 2)
-            cv.rectangle(img, shaft_start, shaft_end, self.KEY_FILL, -1)
-            cv.rectangle(img, shaft_start, shaft_end, self.KEY_BORDER, 1)
-
-            # Draw teeth (small rectangles)
-            teeth_x = center_x + shaft_length // 4
-            teeth_start = (teeth_x, center_y - teeth_height)
-            teeth_end = (teeth_x + teeth_width, center_y + teeth_height)
-            cv.rectangle(img, teeth_start, teeth_end, self.KEY_FILL, -1)
-            cv.rectangle(img, teeth_start, teeth_end, self.KEY_BORDER, 1)
 
     def _render_doors(self, img: np.ndarray, doors: List[Door]) -> None:
         for door in doors:
@@ -352,16 +371,140 @@ class Grid2DRenderer(RendererInterface):
             )
 
     def _render_boxes(self, img: np.ndarray, boxes: List[Any]) -> None:
-        """Render box objects as rectangles with a lid line."""
+        """Render box objects as chests with a lid line."""
         for box in boxes:
+            # Skip pushable boxes - they'll be rendered by _render_pushable_boxes
+            if box.__class__.__name__ == "PushableBox":
+                continue
+
             start, end = self.get_square_edges(box.pos)
-            # Draw main box
+
+            # Draw main box (chest)
             cv.rectangle(img, start, end, self.BOX_FILL, -1)
             cv.rectangle(img, start, end, self.BOX_BORDER, self.block_border - 1)
 
-            # Draw lid line
+            # Draw lid line to indicate it's a chest that can be opened
             lid_y = start[1] + (end[1] - start[1]) // 3
             cv.line(img, (start[0], lid_y), (end[0], lid_y), self.BOX_BORDER, 2)
+
+            # Draw a small keyhole
+            keyhole_x = (start[0] + end[0]) // 2
+            keyhole_y = (start[1] + lid_y) // 2
+            keyhole_radius = (end[0] - start[0]) // 10
+            cv.circle(img, (keyhole_x, keyhole_y), keyhole_radius, self.BOX_BORDER, 1)
+
+    def _render_pushable_boxes(
+        self, img: np.ndarray, pushable_boxes: List[Any]
+    ) -> None:
+        """Render pushable box objects as simple boxes with directional arrows."""
+        for box in pushable_boxes:
+            start, end = self.get_square_edges(box.pos)
+
+            # Draw main box (simpler than a chest)
+            cv.rectangle(img, start, end, self.PUSHABLE_BOX_FILL, -1)
+            cv.rectangle(
+                img, start, end, self.PUSHABLE_BOX_BORDER, self.block_border - 1
+            )
+
+            # Calculate center of the box
+            center_x = (start[0] + end[0]) // 2
+            center_y = (start[1] + end[1]) // 2
+
+            # Draw larger arrows in four directions
+            arrow_size = (end[0] - start[0]) // 4  # Larger arrows (was // 6)
+            arrow_width = 2  # Thicker lines
+
+            # Top arrow
+            cv.line(
+                img,
+                (center_x, center_y - arrow_size),
+                (center_x, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x - arrow_size // 2, center_y - arrow_size // 2),
+                (center_x, center_y - arrow_size),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x + arrow_size // 2, center_y - arrow_size // 2),
+                (center_x, center_y - arrow_size),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+
+            # Bottom arrow
+            cv.line(
+                img,
+                (center_x, center_y + arrow_size),
+                (center_x, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x - arrow_size // 2, center_y + arrow_size // 2),
+                (center_x, center_y + arrow_size),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x + arrow_size // 2, center_y + arrow_size // 2),
+                (center_x, center_y + arrow_size),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+
+            # Left arrow
+            cv.line(
+                img,
+                (center_x - arrow_size, center_y),
+                (center_x, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x - arrow_size // 2, center_y - arrow_size // 2),
+                (center_x - arrow_size, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x - arrow_size // 2, center_y + arrow_size // 2),
+                (center_x - arrow_size, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+
+            # Right arrow
+            cv.line(
+                img,
+                (center_x + arrow_size, center_y),
+                (center_x, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x + arrow_size // 2, center_y - arrow_size // 2),
+                (center_x + arrow_size, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
+            cv.line(
+                img,
+                (center_x + arrow_size // 2, center_y + arrow_size // 2),
+                (center_x + arrow_size, center_y),
+                self.PUSHABLE_BOX_BORDER,
+                arrow_width,
+            )
 
     def _create_new_frame(self, env: Any) -> np.ndarray:
         img = self._create_base_image()

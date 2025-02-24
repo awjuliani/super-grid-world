@@ -157,20 +157,31 @@ def render_sphere(x, y, z, radius, slices=16, stacks=16, texture=None):
     glPopMatrix()
 
 
-def render_cylinder(x, y, z, radius, height, texture=None, slices=32, stacks=1):
+def render_cylinder(
+    x, y, z, radius, height, texture=None, color=None, slices=32, stacks=1
+):
     # Render a cylinder at position (x,y,z) with given radius and height, aligned along the y-axis
     glPushMatrix()
     glTranslatef(x, y, z)
     glRotatef(-90, 1, 0, 0)  # rotate to align cylinder axis from z to y
     quadric = gluNewQuadric()
+
     if texture is not None:
         glEnable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, texture)
         gluQuadricTexture(quadric, GL_TRUE)
+    elif color is not None:
+        glDisable(GL_TEXTURE_2D)
+        glColor3f(*color)
+
     gluCylinder(quadric, radius, radius, height, slices, stacks)
     gluDeleteQuadric(quadric)
+
     if texture is not None:
         glDisable(GL_TEXTURE_2D)
+    elif color is not None:
+        glColor3f(1.0, 1.0, 1.0)  # Reset color to white
+
     glPopMatrix()
 
 
@@ -182,7 +193,17 @@ def render_torus(inner_radius, outer_radius, nsides=16, rings=30, texture=None):
     if texture is not None:
         glEnable(GL_TEXTURE_2D)
         glBindTexture(GL_TEXTURE_2D, texture)
+        # Enable texture generation using sphere mapping
+        glEnable(GL_TEXTURE_GEN_S)
+        glEnable(GL_TEXTURE_GEN_T)
+        glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP)
+        glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP)
+
     glutSolidTorus(inner_radius, outer_radius, nsides, rings)
+
     if texture is not None:
+        # Disable texture generation
+        glDisable(GL_TEXTURE_GEN_S)
+        glDisable(GL_TEXTURE_GEN_T)
         glDisable(GL_TEXTURE_2D)
     glPopMatrix()

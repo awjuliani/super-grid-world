@@ -1,3 +1,6 @@
+import numpy as np
+
+
 class Object:
     def __init__(
         self,
@@ -243,3 +246,62 @@ class Sign(Object):
     def interact(self, agent):
         super().interact(agent)
         return f"The sign reads: '{self.message}'"
+
+
+class PushableBox(Object):
+    def __init__(self, pos):
+        super().__init__(pos, obstacle=True, consumable=False, terminal=False)
+        self.name = "pushable box"
+        self.being_pushed = False
+
+    def copy(self):
+        new_box = type(self)(list(self.pos))
+        new_box.being_pushed = self.being_pushed
+        return new_box
+
+    def interact(self, agent):
+        super().interact(agent)
+        return "Agent tried to interact with a pushable box"
+
+    def pre_step_interaction(self, agent, direction):
+        """
+        Handle pushing the box when an agent tries to move into its position.
+        Returns (success, message) tuple.
+        """
+        # Calculate the position the box would be pushed to
+        push_target = list((np.array(self.pos) + direction).tolist())
+
+        # Store the direction for the step method
+        self.push_direction = direction
+        self.being_pushed = True
+
+        # Return True to allow the agent to move into our position
+        # We'll temporarily set ourselves as non-obstacle
+        self.obstacle = False
+
+        return True, "Agent is pushing a box"
+
+    def step(self, env):
+        """Handle the actual pushing of the box if needed."""
+        super().step(env)
+
+        if self.being_pushed and hasattr(self, "push_direction"):
+            # Calculate the position the box would be pushed to
+            push_target = list((np.array(self.pos) + self.push_direction).tolist())
+
+            # Check if the target position is valid
+            if env.check_target(push_target):
+                # Move the box to the new position
+                self.pos = push_target
+                # Reset the obstacle property
+                self.obstacle = True
+                # Reset the push flag
+                self.being_pushed = False
+                return "Box was pushed"
+            else:
+                # If we couldn't push, reset the obstacle property
+                self.obstacle = True
+                self.being_pushed = False
+                return "Box couldn't be pushed"
+
+        return None

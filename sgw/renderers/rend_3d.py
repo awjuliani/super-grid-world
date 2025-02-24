@@ -84,6 +84,7 @@ class Grid3DRenderer(RendererInterface):
                 "fruit": "fruit.png",
                 "sign": "sign.png",
                 "box": "wood.png",  # Reuse wood texture for box
+                "pushable_box": "wood.png",  # Reuse wood texture for pushable box
             }.items()
         }
 
@@ -126,26 +127,61 @@ class Grid3DRenderer(RendererInterface):
         # Render keys
         if "keys" in env.objects:
             for key in env.objects["keys"]:
-                # Draw key handle using torus primitive
+                # Calculate key dimensions
+                handle_outer_radius = 0.15
+                handle_inner_radius = 0.05
+                stem_length = 0.3
+                stem_radius = 0.04
+                tooth_width = 0.08
+                tooth_height = 0.12
+                tooth_depth = 0.06
+
+                # Calculate total key length to center it in the grid cell
+                total_key_length = handle_outer_radius * 2 + stem_length
+                offset_for_centering = total_key_length / 2
+
+                # Position the handle on the left side
+                handle_center_x = (
+                    key.pos[0] - offset_for_centering + handle_outer_radius
+                )
+
+                # Draw key handle using torus primitive (donut shape)
                 glPushMatrix()
-                glTranslatef(key.pos[0], -0.25, key.pos[1])
+                glTranslatef(handle_center_x, -0.25, key.pos[1])
                 glRotatef(90, 0, 0, 1)  # Rotate to orient torus in horizontal plane
                 render_torus(
-                    0.04, 0.15, nsides=16, rings=16, texture=self.textures["key"]
+                    handle_inner_radius,
+                    handle_outer_radius,
+                    nsides=16,
+                    rings=16,
+                    texture=self.textures["key"],
                 )
                 glPopMatrix()
 
-                # Draw shaft using cylinder primitive
+                # Draw key stem (cylinder primitive)
+                # Position the stem to start at the right edge of the donut
+                stem_start_x = handle_center_x + handle_outer_radius
+
                 glPushMatrix()
-                glTranslatef(key.pos[0] + 0.15, -0.25, key.pos[1])
+                # Position at the start of the stem
+                glTranslatef(stem_start_x, -0.25, key.pos[1])
+                # Move the stem length forward since cylinder is centered at origin
+                glTranslatef(stem_length, 0, 0)
                 glRotatef(90, 0, 0, 1)  # Rotate so that the cylinder lies horizontally
-                render_cylinder(0, 0, 0, 0.05, 0.3, texture=self.textures["key"])
+                render_cylinder(
+                    0, 0, 0, stem_radius, stem_length, texture=self.textures["key"]
+                )
                 glPopMatrix()
 
-                # Draw teeth
+                # Draw single downward tooth at the end of the stem
+                tooth_x = stem_start_x + stem_length - tooth_width / 2
+
                 glPushMatrix()
-                glTranslatef(key.pos[0] + 0.3, -0.25, key.pos[1])
-                glScalef(0.1, 0.05, 0.15)
+                glTranslatef(tooth_x, -0.25, key.pos[1])
+                glTranslatef(
+                    0, -tooth_height / 2, 0
+                )  # Move down to create downward tooth
+                glScalef(tooth_width, tooth_height, tooth_depth)
                 render_cube(0, 0, 0, self.textures["key"])
                 glPopMatrix()
 
@@ -180,7 +216,16 @@ class Grid3DRenderer(RendererInterface):
         # Render boxes
         if "boxes" in env.objects:
             for box in env.objects["boxes"]:
-                self._render_box(box.pos[0], box.pos[1])
+                # Skip pushable boxes - they'll be rendered separately
+                if box.__class__.__name__ != "PushableBox":
+                    self._render_box(box.pos[0], box.pos[1])
+                else:
+                    self._render_pushable_box(box.pos[0], box.pos[1])
+
+        # Render pushable boxes
+        if "pushable_boxes" in env.objects:
+            for box in env.objects["pushable_boxes"]:
+                self._render_pushable_box(box.pos[0], box.pos[1])
 
         # Render other agents (excluding current agent)
         current_agent = (
@@ -233,7 +278,7 @@ class Grid3DRenderer(RendererInterface):
         glPopMatrix()
 
     def _render_box(self, x, z):
-        """Render a box as a cube with a lid line."""
+        """Render a box as a chest with a lid."""
         # Render main box
         glPushMatrix()
         glTranslatef(x, -0.25, z)  # Slightly raised from ground
@@ -246,6 +291,54 @@ class Grid3DRenderer(RendererInterface):
         glTranslatef(x, 0.0, z)  # At the top of the box
         glScalef(0.8, 0.1, 0.8)  # Thin lid
         render_cube(0, 0, 0, self.textures["box"])
+        glPopMatrix()
+
+        # Render a small keyhole on the front
+        glPushMatrix()
+        glTranslatef(x, -0.1, z + 0.4)  # Front of the box
+        glScalef(0.1, 0.1, 0.05)  # Small keyhole
+        render_cube(0, 0, 0, None, color=(0.2, 0.2, 0.2))  # Dark color for keyhole
+        glPopMatrix()
+
+    def _render_pushable_box(self, x, z):
+        """Render a pushable box as a simple cube with directional arrows."""
+        # Render main box (simpler than a chest - just a cube)
+        glPushMatrix()
+        glTranslatef(x, -0.25, z)  # Slightly raised from ground
+        glScalef(0.8, 0.6, 0.8)  # Slightly taller than a regular box
+        render_cube(0, 0, 0, self.textures["pushable_box"])
+        glPopMatrix()
+
+        # Render directional arrows on each side
+        arrow_size = 0.2
+        arrow_height = 0.1
+
+        # North arrow
+        glPushMatrix()
+        glTranslatef(x, -0.1, z - 0.4)  # North side
+        glRotatef(90, 1, 0, 0)  # Rotate to face north
+        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
+        glPopMatrix()
+
+        # South arrow
+        glPushMatrix()
+        glTranslatef(x, -0.1, z + 0.4)  # South side
+        glRotatef(-90, 1, 0, 0)  # Rotate to face south
+        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
+        glPopMatrix()
+
+        # East arrow
+        glPushMatrix()
+        glTranslatef(x + 0.4, -0.1, z)  # East side
+        glRotatef(90, 0, 0, 1)  # Rotate to face east
+        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
+        glPopMatrix()
+
+        # West arrow
+        glPushMatrix()
+        glTranslatef(x - 0.4, -0.1, z)  # West side
+        glRotatef(-90, 0, 0, 1)  # Rotate to face west
+        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
         glPopMatrix()
 
     def render_frame(self, env, agent_idx=0, is_state_view=False):
