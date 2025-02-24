@@ -18,6 +18,7 @@ class GridSymbolicRenderer(RendererInterface):
         "fruits": 8,
         "signs": 9,
         "boxes": 10,
+        "pushable_boxes": 11,
     }
 
     def __init__(self, grid_shape: Tuple[int, int], window_size: int = None):

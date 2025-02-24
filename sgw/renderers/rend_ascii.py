@@ -21,6 +21,7 @@ class GridASCIIRenderer(RendererInterface):
         "fruits": "F",
         "signs": "S",
         "boxes": "X",
+        "pushable_boxes": "P",
     }
 
     # Object types and their corresponding grid values

@@ -373,9 +373,6 @@ class Grid2DRenderer(RendererInterface):
     def _render_boxes(self, img: np.ndarray, boxes: List[Any]) -> None:
         """Render box objects as chests with a lid line."""
         for box in boxes:
-            # Skip pushable boxes - they'll be rendered by _render_pushable_boxes
-            if box.__class__.__name__ == "PushableBox":
-                continue
 
             start, end = self.get_square_edges(box.pos)
 
