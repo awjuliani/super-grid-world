@@ -233,10 +233,15 @@ class SuperGridWorld(Env):
         if self.check_target(new_pos):
             self.agent.move(direction)
 
-    def check_target(self, target: list):
+    def check_target(self, target: list, obstacles_only: bool = True):
         """
         Checks if the target is a valid (movable) position.
         Returns True if the target is valid, False otherwise.
+
+        Args:
+            target: The target position to check
+            obstacles_only: If True, only obstacle objects block movement.
+                           If False, any object blocks movement.
         """
         x_check = -1 < target[0] < self.grid_shape[0]
         y_check = -1 < target[1] < self.grid_shape[1]
@@ -247,11 +252,17 @@ class SuperGridWorld(Env):
         # Convert numpy array to list for comparison
         target = list(map(int, target))
 
-        # Check all objects for whether they are an obstacle
+        # Check all objects
         for obj_type in self.objects.values():
             obj = next((o for o in obj_type if o == target), None)
-            if obj and obj.obstacle:
-                return False
+            if obj:
+                # If obstacles_only is True, only obstacle objects block movement
+                # If obstacles_only is False, any object blocks movement
+                if obstacles_only:
+                    if obj.obstacle:
+                        return False
+                else:
+                    return False
 
         # Check if any other agent is at the target position
         for agent in self.agents:
@@ -335,7 +346,7 @@ class SuperGridWorld(Env):
         # Handle any pre-step interactions
         obj = self._find_object_at(target_pos)
         if obj and hasattr(obj, "pre_step_interaction"):
-            allowed, message = obj.pre_step_interaction(agent, direction)
+            allowed, message = obj.pre_step_interaction(agent, direction, self)
             if message:
                 self.events.append(message)
             if not allowed:

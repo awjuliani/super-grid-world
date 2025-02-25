@@ -1,28 +1,41 @@
-import numpy as np
+from typing import List, Tuple, Optional, Union, Any
 
 
 class Object:
+    """Base class for all objects in the environment."""
+
     def __init__(
         self,
-        pos,
-        obstacle=True,
-        consumable=False,
-        terminal=False,
+        pos: List[int],
+        obstacle: bool = True,
+        consumable: bool = False,
+        terminal: bool = False,
     ):
+        """
+        Initialize an object.
+
+        Args:
+            pos: [x, y] position of the object
+            obstacle: Whether the object blocks movement
+            consumable: Whether the object can be consumed/collected
+            terminal: Whether interacting with this object ends the episode
+        """
         self.pos = pos
         self.obstacle = obstacle
         self.consumable = consumable
         self.terminal = terminal
         self.name = "object"
 
-    def __eq__(self, other):
+    def __eq__(self, other: Any) -> bool:
+        """Check if this object is at the same position as another object or coordinate."""
         if isinstance(other, (list, tuple)):
             return self.pos[0] == other[0] and self.pos[1] == other[1]
         elif isinstance(other, Object):
             return self.pos[0] == other.pos[0] and self.pos[1] == other.pos[1]
         return False
 
-    def copy(self):
+    def copy(self) -> "Object":
+        """Create a deep copy of this object."""
         return type(self)(
             list(self.pos),
             self.obstacle,
@@ -30,70 +43,95 @@ class Object:
             self.terminal,
         )
 
-    def interact(self, agent):
-        """Called when agent interacts with object. Returns event string if any."""
+    def interact(self, agent: Any) -> Optional[str]:
+        """
+        Called when agent interacts with object.
+
+        Args:
+            agent: The agent interacting with this object
+
+        Returns:
+            Optional event message string
+        """
         if self.terminal:
             agent.done = True
         return None
 
-    def step(self, env):
-        """Called each step of the environment. Can be used to update object state."""
+    def step(self, env: Any) -> None:
+        """
+        Called each step of the environment.
+
+        Args:
+            env: The environment instance
+        """
         pass
 
 
 class Wall(Object):
-    def __init__(self, pos):
-        super().__init__(pos, True, False)
+    """A wall that blocks movement."""
+
+    def __init__(self, pos: List[int]):
+        super().__init__(pos, obstacle=True, consumable=False)
         self.name = "wall"
 
-    def copy(self):
+    def copy(self) -> "Wall":
         return type(self)(list(self.pos))
-
-    def interact(self, agent):
-        super().interact(agent)
-        return None
 
 
 class Reward(Object):
-    def __init__(self, pos, value):
-        super().__init__(pos, False, True)
+    """A reward object that gives the agent a specified value when collected."""
+
+    def __init__(self, pos: List[int], value: float):
+        super().__init__(pos, obstacle=False, consumable=True)
         self.value = value
         self.name = "reward"
 
-    def copy(self):
+    def copy(self) -> "Reward":
         return type(self)(list(self.pos), self.value)
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_reward(self.value)
         return f"Agent collected reward of {self.value}"
 
 
 class Key(Object):
-    def __init__(self, pos):
-        super().__init__(pos, False, True)
+    """A key that can be collected and used to unlock doors."""
+
+    def __init__(self, pos: List[int]):
+        super().__init__(pos, obstacle=False, consumable=True)
         self.name = "door key"
 
-    def copy(self):
+    def copy(self) -> "Key":
         return type(self)(list(self.pos))
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
         return "Agent collected a key"
 
 
 class Door(Object):
-    def __init__(self, pos, orientation):
+    """A door that can be unlocked with a key."""
+
+    def __init__(self, pos: List[int], orientation: Any):
         super().__init__(pos, obstacle=True, consumable=True)
         self.orientation = orientation
         self.name = "locked door"
 
-    def copy(self):
+    def copy(self) -> "Door":
         return type(self)(list(self.pos), self.orientation)
 
-    def try_unlock(self, agent):
-        """Attempt to unlock the door with a key from the agent's inventory."""
+    def try_unlock(self, agent: Any) -> Tuple[bool, Optional[str]]:
+        """
+        Attempt to unlock the door with a key from the agent's inventory.
+
+        Args:
+            agent: The agent trying to unlock the door
+
+        Returns:
+            Tuple of (success, message)
+        """
         if not self.obstacle:  # Already unlocked
             return True, None
         if agent.use_key():
@@ -101,74 +139,84 @@ class Door(Object):
             return True, "Agent unlocked and went through a door"
         return False, "Agent tried to open door but had no key"
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> Optional[str]:
         super().interact(agent)
         success, message = self.try_unlock(agent)
         return message
 
-    def pre_step_interaction(self, agent, direction):
+    def pre_step_interaction(
+        self, agent: Any, direction: Any, env: Any = None
+    ) -> Tuple[bool, Optional[str]]:
         return self.try_unlock(agent)
 
 
 class Warp(Object):
-    def __init__(self, pos, target):
-        super().__init__(pos, False, False)
+    """A teleportation pad that moves the agent to a target location."""
+
+    def __init__(self, pos: List[int], target: List[int]):
+        super().__init__(pos, obstacle=False, consumable=False)
         self.target = target
         self.name = "warp pad"
 
-    def copy(self):
+    def copy(self) -> "Warp":
         return type(self)(list(self.pos), list(self.target))
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.teleport(self.target)
         return "Agent used a warp pad to teleport"
 
 
 class Marker(Object):
-    def __init__(self, pos, color):
-        super().__init__(pos, False, False)
+    """A colored marker on the ground."""
+
+    def __init__(self, pos: List[int], color: Tuple[int, int, int]):
+        super().__init__(pos, obstacle=False, consumable=False)
         self.color = color
         self.name = "marker"
 
-    def copy(self):
+    def copy(self) -> "Marker":
         return type(self)(list(self.pos), tuple(self.color))
-
-    def interact(self, agent):
-        super().interact(agent)
-        return None
 
 
 class Other(Object):
-    def __init__(self, pos, name):
-        super().__init__(pos, False, True, False)
+    """A generic collectible object with a custom name."""
+
+    def __init__(self, pos: List[int], name: str):
+        super().__init__(pos, obstacle=False, consumable=True, terminal=False)
         self.name = name
 
-    def copy(self):
+    def copy(self) -> "Other":
         return type(self)(list(self.pos), self.name)
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
         return f"Agent collected {self.name}"
 
 
 class Tree(Object):
-    def __init__(self, pos, spawn_rate=0.5, spawn_radius=2):
-        super().__init__(pos, True, False, False)
+    """A tree that can spawn fruits in nearby locations."""
+
+    def __init__(self, pos: List[int], spawn_rate: float = 0.5, spawn_radius: int = 2):
+        super().__init__(pos, obstacle=True, consumable=False, terminal=False)
         self.name = "tree"
         self.spawn_rate = spawn_rate
         self.spawn_radius = spawn_radius
 
-    def copy(self):
+    def copy(self) -> "Tree":
         return type(self)(list(self.pos), self.spawn_rate, self.spawn_radius)
 
-    def interact(self, agent):
-        super().interact(agent)
-        return None
+    def step(self, env: Any) -> Optional[str]:
+        """
+        Potentially spawn a fruit in a nearby location.
 
-    def step(self, env):
-        """Potentially spawn a fruit in a nearby location."""
+        Args:
+            env: The environment instance
+
+        Returns:
+            Optional event message string
+        """
         super().step(env)
 
         # Random chance to spawn fruit
@@ -195,31 +243,35 @@ class Tree(Object):
 
 
 class Fruit(Object):
-    def __init__(self, pos):
-        super().__init__(pos, False, True, False)
+    """A fruit that can be collected by the agent."""
+
+    def __init__(self, pos: List[int]):
+        super().__init__(pos, obstacle=False, consumable=True, terminal=False)
         self.name = "fruit"
 
-    def copy(self):
+    def copy(self) -> "Fruit":
         return type(self)(list(self.pos))
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
         return "Agent collected a fruit"
 
 
 class Box(Object):
-    def __init__(self, pos):
-        super().__init__(pos, False, False, False)
+    """A box that can store and provide items."""
+
+    def __init__(self, pos: List[int]):
+        super().__init__(pos, obstacle=False, consumable=False, terminal=False)
         self.name = "box"
         self.contents = []
 
-    def copy(self):
+    def copy(self) -> "Box":
         new_box = type(self)(list(self.pos))
         new_box.contents = self.contents.copy()
         return new_box
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         if agent.inventory:
             # Put item in box
@@ -235,73 +287,75 @@ class Box(Object):
 
 
 class Sign(Object):
-    def __init__(self, pos, message):
-        super().__init__(pos, False, False, False)
+    """A sign with a readable message."""
+
+    def __init__(self, pos: List[int], message: str):
+        super().__init__(pos, obstacle=False, consumable=False, terminal=False)
         self.message = message
         self.name = "sign"
 
-    def copy(self):
+    def copy(self) -> "Sign":
         return type(self)(list(self.pos), self.message)
 
-    def interact(self, agent):
+    def interact(self, agent: Any) -> str:
         super().interact(agent)
         return f"The sign reads: '{self.message}'"
 
 
 class PushableBox(Object):
-    def __init__(self, pos):
+    """A box that can be pushed by the agent."""
+
+    def __init__(self, pos: List[int]):
         super().__init__(pos, obstacle=True, consumable=False, terminal=False)
         self.name = "pushable box"
         self.being_pushed = False
 
-    def copy(self):
+    def copy(self) -> "PushableBox":
         new_box = type(self)(list(self.pos))
         new_box.being_pushed = self.being_pushed
         return new_box
 
-    def interact(self, agent):
-        super().interact(agent)
-        return "Agent tried to interact with a pushable box"
-
-    def pre_step_interaction(self, agent, direction):
+    def pre_step_interaction(
+        self, agent: Any, direction: Any, env: Any = None
+    ) -> Tuple[bool, Optional[str]]:
         """
-        Handle pushing the box when an agent tries to move into its position.
-        Returns (success, message) tuple.
-        """
-        # Calculate the position the box would be pushed to
-        push_target = list((np.array(self.pos) + direction).tolist())
+        Called before the agent moves onto the box's position.
+        Calculates the new position for the box based on the direction the agent is looking.
 
-        # Store the direction for the step method
-        self.push_direction = direction
+        Args:
+            agent: The agent trying to push the box
+            direction: The direction the agent is moving
+            env: The environment instance, needed to check if the new position is valid
+
+        Returns:
+            Tuple of (allowed, message)
+        """
+        # Get the direction the agent is looking
+        looking_idx = agent.looking
+
+        # Get the direction vector from the agent's direction map
+        push_direction = agent.direction_map[looking_idx].tolist()
+
+        # Calculate the new position for the box
+        new_box_pos = [self.pos[0] + push_direction[0], self.pos[1] + push_direction[1]]
+
+        # Check if the new position is valid (if env is provided)
+        # Use obstacles_only=False to prevent pushing onto any object
+        if env is None or not env.check_target(new_box_pos, obstacles_only=False):
+            return False, "Agent tried to push a box but it's blocked"
+
+        # Update the box's position
+        self.pos = new_box_pos
         self.being_pushed = True
 
-        # Return True to allow the agent to move into our position
-        # We'll temporarily set ourselves as non-obstacle
-        self.obstacle = False
+        # Return True to allow the agent to move to the box's original position
+        return True, "Agent pushed a box"
 
-        return True, "Agent is pushing a box"
-
-    def step(self, env):
-        """Handle the actual pushing of the box if needed."""
-        super().step(env)
-
-        if self.being_pushed and hasattr(self, "push_direction"):
-            # Calculate the position the box would be pushed to
-            push_target = list((np.array(self.pos) + self.push_direction).tolist())
-
-            # Check if the target position is valid
-            if env.check_target(push_target):
-                # Move the box to the new position
-                self.pos = push_target
-                # Reset the obstacle property
-                self.obstacle = True
-                # Reset the push flag
-                self.being_pushed = False
-                return "Box was pushed"
-            else:
-                # If we couldn't push, reset the obstacle property
-                self.obstacle = True
-                self.being_pushed = False
-                return "Box couldn't be pushed"
-
+    def interact(self, agent: Any) -> None:
+        """Called when the agent interacts with the box directly."""
+        super().interact(agent)
+        self.being_pushed = False
         return None
+
+    def step(self, env: Any) -> None:
+        super().step(env)

@@ -1,5 +1,5 @@
 import sgw.utils.base_utils as base_utils
-from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other
+from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other, PushableBox
 
 
 def default_agent_start(height, width, offset=2):
@@ -128,6 +128,7 @@ def two_rooms(height: int, width: int):
         "doors": [Door([mid, mid], "h")],
         "warps": [],
         "other": [],
+        "pushable_boxes": [PushableBox([mid - half_mid, mid + half_mid])],
     }
     blocks = [[mid, i] for i in range(width)]
     # Remove door position

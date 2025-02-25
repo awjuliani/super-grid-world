@@ -546,14 +546,35 @@ class Grid2DRenderer(RendererInterface):
         cv.fillConvexPoly(img, pts, agent_color)
 
     def _should_update_cache(self, env: Any) -> bool:
-        objects_changed = self.cached_objects != env.objects
-        return objects_changed or self.cached_image is None
+        """Determine if the renderer cache needs to be updated based on changes in the environment."""
+        if self.cached_objects is None or self.cached_image is None:
+            return True
+
+        # Check if object types have changed
+        if set(self.cached_objects.keys()) != set(env.objects.keys()):
+            return True
+
+        # Check if the number of objects of each type has changed
+        for key in self.cached_objects:
+            if len(self.cached_objects[key]) != len(env.objects[key]):
+                return True
+
+        # Check if any object's position has changed
+        for key in self.cached_objects:
+            cached_positions = {tuple(obj.pos) for obj in self.cached_objects[key]}
+            current_positions = {tuple(obj.pos) for obj in env.objects[key]}
+            if cached_positions != current_positions:
+                return True
+
+        return False
 
     def _update_cache(self, env: Any) -> None:
-        self.cached_objects = {
-            key: value.copy() if hasattr(value, "copy") else value
-            for key, value in env.objects.items()
-        }
+        self.cached_objects = {}
+        for key, value in env.objects.items():
+            # Create a list of deep-copied objects using their copy methods
+            self.cached_objects[key] = [
+                obj.copy() if hasattr(obj, "copy") else obj for obj in value
+            ]
 
     # Helper methods to compute crop coordinates to remove duplicated logic
     def _compute_vertical_crop(
@@ -705,25 +726,29 @@ class Grid2DRenderer(RendererInterface):
         img = self._get_base_image_cached(env)
         self._render_agents(img, env, agent_idx, is_state_view)
 
-        # Create padded template with correct dimensions
-        padded_width = self.img_width + (2 * self.block_size)
-        padded_height = self.img_height + (2 * self.block_size)
+        # Calculate padding based on field of view
+        # We need at least w_size blocks of padding on each side
+        padding_blocks = max(w_size, 1)  # Ensure at least 1 block of padding
+        padded_width = self.img_width + (2 * padding_blocks * self.block_size)
+        padded_height = self.img_height + (2 * padding_blocks * self.block_size)
         template = np.ones((padded_height, padded_width, 3), dtype=np.uint8) * np.array(
             self.TEMPLATE_COLOR, dtype=np.uint8
         )
 
         # Place the image in the center of the padded template
+        padding_pixels = padding_blocks * self.block_size
         template[
-            self.block_size : self.block_size + self.img_height,
-            self.block_size : self.block_size + self.img_width,
+            padding_pixels : padding_pixels + self.img_height,
+            padding_pixels : padding_pixels + self.img_width,
         ] = img
 
         x, y = env.agents[agent_idx].pos
         window_size = (2 * w_size + 1) * self.block_size
-        x_start_block = (x * self.block_size) + self.block_size
-        x_end_block = ((x + 1) * self.block_size) + self.block_size
-        y_start_block = (y * self.block_size) + self.block_size
-        y_end_block = ((y + 1) * self.block_size) + self.block_size
+        # Adjust block positions to account for the new padding
+        x_start_block = (x * self.block_size) + padding_pixels
+        x_end_block = ((x + 1) * self.block_size) + padding_pixels
+        y_start_block = (y * self.block_size) + padding_pixels
+        y_end_block = ((y + 1) * self.block_size) + padding_pixels
 
         if env.control_type == ControlType.egocentric:
             agent_dir = env.agents[agent_idx].looking
