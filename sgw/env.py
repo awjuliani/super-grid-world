@@ -33,10 +33,17 @@ class SuperGridWorld(Env):
         add_outer_walls: bool = True,
         field_of_view: int = None,
         num_agents: int = 1,
+        agent_names: list = None,
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
-            seed, use_noop, manual_interact, add_outer_walls, field_of_view, num_agents
+            seed,
+            use_noop,
+            manual_interact,
+            add_outer_walls,
+            field_of_view,
+            num_agents,
+            agent_names,
         )
 
         # Setup grid and walls
@@ -54,6 +61,7 @@ class SuperGridWorld(Env):
         add_outer_walls,
         field_of_view,
         num_agents,
+        agent_names,
     ):
         self.rng = np.random.RandomState(seed)
         self.use_noop = use_noop
@@ -62,6 +70,7 @@ class SuperGridWorld(Env):
         self.field_of_view = field_of_view
         self.num_agents = num_agents
         self.agents = [None] * num_agents  # List to store multiple agents
+        self.agent_names = agent_names
 
     def _init_grid(self, template, grid_shape):
         # grid_shape is (height, width)
@@ -201,7 +210,12 @@ class SuperGridWorld(Env):
                     if agent_positions[i] is not None
                     else self.agent_start_pos
                 )
-            self.agents[i] = Agent(pos, field_of_view=self.field_of_view)
+            self.agents[i] = Agent(
+                pos,
+                field_of_view=self.field_of_view,
+                control_type=self.control_type,
+                name=self.agent_names[i],
+            )
 
     @property
     def free_spots(self):
@@ -330,7 +344,7 @@ class SuperGridWorld(Env):
         """Process the action and move the specified agent if applicable."""
         chosen_action = self.valid_actions[action]
         agent = self.agents[agent_idx]
-        direction = agent.process_action(chosen_action, self.control_type)
+        direction = agent.process_action(chosen_action)
         if direction is None:
             return
 

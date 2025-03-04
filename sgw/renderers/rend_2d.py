@@ -40,6 +40,26 @@ class Grid2DRenderer(RendererInterface):
     PUSHABLE_BOX_FILL = (205, 133, 63)  # Peru (lighter brown)
     PUSHABLE_BOX_BORDER = (160, 82, 45)  # Sienna brown
 
+    # Dictionary mapping color names to RGB values for agents
+    AGENT_COLOR_DICT = {
+        "Magenta": (255, 0, 255),
+        "Orange": (255, 165, 0),
+        "Cyan": (0, 255, 255),
+        "Purple": (128, 0, 128),
+        "Brown": (165, 42, 42),
+        "Dark Green": (0, 128, 0),
+        "Steel Blue": (70, 130, 180),
+        "Rosy Brown": (188, 143, 143),
+        "Sea Green": (46, 139, 87),
+        "Gold": (255, 215, 0),
+        "Slate Blue": (106, 90, 205),
+        "Tomato": (255, 99, 71),
+        "Medium Sea Green": (60, 179, 113),
+        "Violet": (238, 130, 238),
+        "Dark Orange": (255, 140, 0),
+        "Light Sea Green": (32, 178, 170),
+    }
+
     def __init__(
         self,
         grid_shape: Tuple[int, int],
@@ -698,8 +718,31 @@ class Grid2DRenderer(RendererInterface):
         self, img: np.ndarray, env: Any, agent_idx: int, is_state_view: bool
     ) -> None:
         if is_state_view:
-            for agent in env.agents:
-                self.render_agent(img, agent.pos, agent.looking, self.OTHER_AGENT_COLOR)
+            # Get list of color names for indexing
+            color_names = list(self.AGENT_COLOR_DICT.keys())
+
+            # Print legend connecting agent names to colors
+            print("\n=== Agent Color Legend ===")
+            for i, agent in enumerate(env.agents):
+                # Get agent color (use modulo to handle more agents than colors)
+                color_index = i % len(color_names)
+                color_name = color_names[color_index]
+                agent_color = self.AGENT_COLOR_DICT[color_name]
+
+                # Get agent name or index if name not available
+                agent_name = getattr(agent, "name", f"Agent {i}")
+
+                # Print color legend with color name
+                print(f"{agent_name}: {color_name}")
+            print("========================\n")
+
+            # Render each agent with a different color
+            for i, agent in enumerate(env.agents):
+                # Use modulo to handle more agents than colors
+                color_index = i % len(color_names)
+                color_name = color_names[color_index]
+                agent_color = self.AGENT_COLOR_DICT[color_name]
+                self.render_agent(img, agent.pos, agent.looking, agent_color)
         else:
             for i, agent in enumerate(env.agents):
                 color = self.AGENT_COLOR if i == agent_idx else self.OTHER_AGENT_COLOR

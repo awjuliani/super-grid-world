@@ -4,7 +4,14 @@ from sgw.enums import Action, ControlType
 
 
 class Agent:
-    def __init__(self, pos, direction=0, field_of_view=2):
+    def __init__(
+        self,
+        pos,
+        direction=0,
+        field_of_view=2,
+        name="Alice",
+        control_type=ControlType.egocentric,
+    ):
         self.pos = list(map(int, pos))
         self.orientation = direction  # Current rotation (0-3)
         self.looking = direction  # Direction agent is looking
@@ -12,6 +19,8 @@ class Agent:
         self.reward = 0
         self.field_of_view = field_of_view
         self.done = False
+        self.name = name
+        self.control_type = control_type
         # Create direction map from Action enum
         direction_vectors = Action.get_direction_map()
         self.direction_map = np.array(
@@ -25,7 +34,7 @@ class Agent:
             ]
         )
 
-    def process_action(self, action, control_type):
+    def process_action(self, action):
         """
         Process an action based on the control type.
         Returns the movement direction if any, None otherwise.
@@ -35,7 +44,7 @@ class Agent:
             return None
 
         # Handle egocentric actions
-        if control_type == ControlType.egocentric:
+        if self.control_type == ControlType.egocentric:
             if action == Action.MOVE_FORWARD:
                 return self.direction_map[self.orientation]
             elif action in [Action.ROTATE_LEFT, Action.ROTATE_RIGHT]:
