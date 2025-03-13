@@ -33,7 +33,7 @@ class SuperGridWorld(Env):
         add_outer_walls: bool = True,
         field_of_view: int = None,
         num_agents: int = 1,
-        agent_names: list = None,
+        agent_names: list = ["agent"],
     ):
         # Initialize basic attributes
         self._init_basic_attrs(
