@@ -72,7 +72,7 @@ class Wall(Object):
 
     def __init__(self, pos: List[int]):
         super().__init__(pos, obstacle=True, consumable=False)
-        self.name = "wall"
+        self.name = "obstacle"
 
     def copy(self) -> "Wall":
         return type(self)(list(self.pos))
@@ -92,7 +92,7 @@ class Reward(Object):
     def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_reward(self.value)
-        return f"Agent collected reward of {self.value}"
+        return f"{agent.name} collected {self.name} of {self.value}"
 
 
 class Key(Object):
@@ -108,7 +108,7 @@ class Key(Object):
     def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
-        return "Agent collected a key"
+        return f"{agent.name} collected a {self.name}"
 
 
 class Door(Object):
@@ -136,8 +136,8 @@ class Door(Object):
             return True, None
         if agent.use_key():
             self.obstacle = False  # Unlock the door
-            return True, "Agent unlocked and went through a door"
-        return False, "Agent tried to open door but had no key"
+            return True, f"{agent.name} unlocked and went through a {self.name}"
+        return False, f"{agent.name} tried to open a {self.name} but had no key"
 
     def interact(self, agent: Any) -> Optional[str]:
         super().interact(agent)
@@ -164,7 +164,7 @@ class Warp(Object):
     def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.teleport(self.target)
-        return "Agent used a warp pad to teleport"
+        return f"{agent.name} used a {self.name} to teleport"
 
 
 class Marker(Object):
@@ -192,7 +192,7 @@ class Other(Object):
     def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
-        return f"Agent collected {self.name}"
+        return f"{agent.name} collected {self.name}"
 
 
 class Tree(Object):
@@ -255,7 +255,7 @@ class Fruit(Object):
     def interact(self, agent: Any) -> str:
         super().interact(agent)
         agent.collect_object(self)
-        return "Agent collected a fruit"
+        return f"{agent.name} collected a {self.name}"
 
 
 class Box(Object):
@@ -277,13 +277,13 @@ class Box(Object):
             # Put item in box
             item = agent.inventory.pop(0)  # Remove and get first item from inventory
             self.contents.append(item)
-            return f"Agent put {item.name} in the box"
+            return f"{agent.name} put {item.name} in the box"
         elif self.contents:
             # Take item from box
             item = self.contents.pop()  # Remove and get last item from box
             agent.collect_object(item)
-            return f"Agent took {item.name} from the box"
-        return "Box is empty and agent has no items"
+            return f"{agent.name} took {item.name} from the box"
+        return f"{agent.name} found a {self.name} but it was empty"
 
 
 class Sign(Object):
@@ -299,7 +299,7 @@ class Sign(Object):
 
     def interact(self, agent: Any) -> str:
         super().interact(agent)
-        return f"The sign reads: '{self.message}'"
+        return f"{agent.name} read the sign: '{self.message}'"
 
 
 class PushableBox(Object):
@@ -342,14 +342,14 @@ class PushableBox(Object):
         # Check if the new position is valid (if env is provided)
         # Use obstacles_only=False to prevent pushing onto any object
         if env is None or not env.check_target(new_box_pos, obstacles_only=False):
-            return False, "Agent tried to push a box but it's blocked"
+            return False, f"{agent.name} tried to push a {self.name} but it's blocked"
 
         # Update the box's position
         self.pos = new_box_pos
         self.being_pushed = True
 
         # Return True to allow the agent to move to the box's original position
-        return True, "Agent pushed a box"
+        return True, f"{agent.name} pushed a {self.name}"
 
     def interact(self, agent: Any) -> None:
         """Called when the agent interacts with the box directly."""
