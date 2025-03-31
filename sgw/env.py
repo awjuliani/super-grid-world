@@ -378,19 +378,20 @@ class SuperGridWorld(Env):
 
         # Check all object types for interactions
         for obj_type in self.objects.values():
-            obj = next((o for o in obj_type if o == agent_pos), None)
-            if obj and self._determine_can_interact(action):
-                # Interact with the object and handle any events
-                event = obj.interact(agent)
-                if event:
-                    self.events.append(event)
-                # Remove object if specified
-                if obj.consumable:
-                    obj_type.remove(obj)
+            obj_list_copy = list(obj_type)
+            for obj in reversed(obj_list_copy):
+                if obj.pos == agent_pos:  # Check position again in case it changed
+                    if self._determine_can_interact(action):
+                        # Interact with the object and handle any events
+                        event = obj.interact(agent, self)
+                        if event:
+                            self.events.append(event)
+                        # Remove object if specified and still exists in original list
+                        if obj.consumable and obj in obj_type:
+                            obj_type.remove(obj)
 
     def close(self) -> None:
         self.renderer.close()
-        return super().close()
 
     @property
     def grid_width(self):

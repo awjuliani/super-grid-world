@@ -83,10 +83,17 @@ class Grid3DRenderer(RendererInterface):
                 "tree": "tree.png",
                 "fruit": "fruit.png",
                 "sign": "sign.png",
-                "box": "wood.png",  # Reuse wood texture for box
-                "pushable_box": "wood.png",  # Reuse wood texture for pushable box
+                "box": "wood.png",
+                "pushable_box": "wood.png",
+                "linked_door": "wood.png",
+                "pressure_plate": "metal.png",
+                "lever": "metal.png",
             }.items()
         }
+        if "pressure_plate" not in self.textures:
+            self.textures["pressure_plate"] = self.textures.get("wall")
+        if "lever" not in self.textures:
+            self.textures["lever"] = self.textures.get("wall")
 
     def set_camera(self, agent_pos, agent_dir):
         offsets = [[-1, 0], [0, 1], [1, 0], [0, -1]]
@@ -239,6 +246,29 @@ class Grid3DRenderer(RendererInterface):
                     agent.pos[0], -0.5, agent.pos[1], None, color=(0.5, 0.5, 0.5)
                 )
 
+        # Render Linked Doors
+        if "linked_doors" in env.objects:
+            for door in env.objects["linked_doors"]:
+                if not door.is_open:
+                    glPushMatrix()
+                    glTranslatef(door.pos[0], 0.0, door.pos[1])
+                    render_cube(0, 0.0, 0, self.textures["linked_door"])
+                    glPopMatrix()
+
+        # Render Pressure Plates
+        if "pressure_plates" in env.objects:
+            for plate in env.objects["pressure_plates"]:
+                glPushMatrix()
+                glTranslatef(plate.pos[0], -0.48, plate.pos[1])
+                glScalef(0.8, 0.04, 0.8)
+                render_cube(0, 0, 0, self.textures["pressure_plate"])
+                glPopMatrix()
+
+        # Render Levers
+        if "levers" in env.objects:
+            for lever in env.objects["levers"]:
+                self._render_lever(lever.pos[0], lever.pos[1], lever.activated)
+
         glEndList()
         return list_id
 
@@ -341,35 +371,87 @@ class Grid3DRenderer(RendererInterface):
         render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
         glPopMatrix()
 
+    def _render_lever(self, x, z, activated):
+        """Render a lever with a base and handle indicating state."""
+        base_color = (0.4, 0.4, 0.4)
+        handle_color_active = (0.1, 0.7, 0.1)
+        handle_color_inactive = (0.7, 0.1, 0.1)
+
+        glPushMatrix()
+        glTranslatef(x, -0.4, z)
+        glScalef(0.2, 0.2, 0.2)
+        render_cube(0, 0, 0, texture=None, color=base_color)
+        glPopMatrix()
+
+        handle_length = 0.4
+        handle_radius = 0.05
+        handle_color = handle_color_active if activated else handle_color_inactive
+        angle = 45 if activated else -45
+
+        glPushMatrix()
+        glTranslatef(x, -0.3, z)
+        glRotatef(angle, 0, 0, 1)
+        glTranslatef(handle_length / 2, 0, 0)
+        render_cylinder(
+            0, 0, 0, handle_radius, handle_length, texture=None, color=handle_color
+        )
+        glPopMatrix()
+
     def render_frame(self, env, agent_idx=0, is_state_view=False):
-        glfw.make_context_current(self.window)  # Make context current
+        glfw.make_context_current(self.window)
         glViewport(0, 0, self.width, self.height)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        # Store current agent index for use in create_scene_display_list
         self._current_agent_idx = agent_idx
-
-        # Set camera based on current agent
         agent = env.agents[agent_idx]
         self.set_camera(agent.pos, agent.looking)
 
-        # Render all objects in the scene
-        if "scene" not in self.display_lists or env.objects != self.last_objects:
+        should_regenerate_list = False
+        if "scene" not in self.display_lists or self.last_objects is None:
+            should_regenerate_list = True
+        else:
+            try:
+                if any(
+                    len(env.objects.get(k, [])) != len(self.last_objects.get(k, []))
+                    for k in set(env.objects) | set(self.last_objects)
+                ):
+                    should_regenerate_list = True
+                else:
+                    for k in env.objects:
+                        if k == "linked_doors":
+                            if any(
+                                o1.is_open != o2.is_open
+                                for o1, o2 in zip(env.objects[k], self.last_objects[k])
+                            ):
+                                should_regenerate_list = True
+                                break
+                        elif k == "levers":
+                            if any(
+                                o1.activated != o2.activated
+                                for o1, o2 in zip(env.objects[k], self.last_objects[k])
+                            ):
+                                should_regenerate_list = True
+                                break
+            except Exception:
+                should_regenerate_list = True
+
+        if should_regenerate_list:
             if "scene" in self.display_lists:
                 glDeleteLists(self.display_lists["scene"], 1)
+            glfw.make_context_current(self.window)
             self.display_lists["scene"] = self.create_scene_display_list(env)
             self.last_objects = copy.deepcopy(env.objects)
+
         glCallList(self.display_lists["scene"])
 
         # Render floor
         render_plane(
-            env.grid_width / 2 - 0.5,  # Shift by half a unit to align with grid
+            env.grid_width / 2 - 0.5,
             -0.5,
-            env.grid_height / 2 - 0.5,  # Shift by half a unit to align with grid
+            env.grid_height / 2 - 0.5,
             max(env.grid_width, env.grid_height),
             self.textures["floor"],
-            repeat=max(env.grid_width, env.grid_height)
-            / 4,  # Make each square in the 4x4 pattern correspond to one grid unit
+            repeat=max(env.grid_width, env.grid_height) / 4,
         )
 
         # Read pixels
@@ -377,8 +459,8 @@ class Grid3DRenderer(RendererInterface):
         image = np.frombuffer(buffer, dtype=np.uint8).reshape(
             self.height, self.width, 3
         )
-        image = np.flip(image, axis=0)  # flip vertically
-        image = np.flip(image, axis=1)  # flip horizontally
+        image = np.flip(image, axis=0)
+        image = np.flip(image, axis=1)
         return resize_obs(image, self.resolution, self.torch_obs)
 
     def render(self, env, agent_idx=0, is_state_view=False):
@@ -386,7 +468,7 @@ class Grid3DRenderer(RendererInterface):
         return self.render_frame(env, agent_idx, is_state_view)
 
     def close(self):
-        glfw.make_context_current(self.window)  # Make context current
+        glfw.make_context_current(self.window)
         for list_id in self.display_lists.values():
             glDeleteLists(list_id, 1)
         glfw.destroy_window(self.window)

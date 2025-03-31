@@ -1,5 +1,17 @@
 import sgw.utils.base_utils as base_utils
-from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other, PushableBox
+from sgw.object import (
+    Wall,
+    Reward,
+    Key,
+    Door,
+    Warp,
+    Marker,
+    Other,
+    PushableBox,
+    LinkedDoor,
+    PressurePlate,
+    Lever,
+)
 
 
 DEFAULT_AGENT_START_OFFSET = 2
@@ -28,13 +40,16 @@ def get_empty_objects(
         reward_pos = DEFAULT_REWARD_POS
     return {
         "walls": [],  # Walls will be added later in generate_layout
-        "rewards": [Reward(reward_pos, reward_value)],
+        "rewards": [Reward(reward_pos, reward_value)] if reward_pos else [],
         "markers": [],
         "keys": [],
         "doors": [],
         "warps": [],
         "other": [],
         "pushable_boxes": [],
+        "linked_doors": [],
+        "pressure_plates": [],
+        "levers": [],
     }
 
 
@@ -390,6 +405,36 @@ def narrow(height: int, width: int):
     return blocks, agent_start, objects
 
 
+def linked_door_test(height: int, width: int):
+    """Creates a layout to test PressurePlate, Lever, and LinkedDoor."""
+    # Position agent bottom-center
+    agent_start = [height - 2, width // 2]
+
+    # Define positions
+    door_pos = [height // 2, width // 2]
+    plate_pos = [height - 3, width // 2 - 2]  # Left of start
+    reward_pos = [1, width // 2]  # Behind the door
+    box_pos = [height - 3, width // 2 - 1]
+
+    # Define a common ID for linking
+    door_id = "test_door_1"
+
+    # Create the objects dictionary
+    objects = get_empty_objects(reward_pos=None)  # Start fresh, no default reward
+    objects["rewards"] = [Reward(reward_pos, DEFAULT_REWARD_VALUE)]
+    objects["linked_doors"] = [
+        LinkedDoor(pos=door_pos, linked_id=door_id, orientation="h")
+    ]
+    objects["pressure_plates"] = [
+        PressurePlate(pos=plate_pos, target_linked_id=door_id)
+    ]
+    objects["pushable_boxes"] = [PushableBox(box_pos)]
+    # Create a simple wall dividing top and bottom, with the door as passage
+    blocks = [[door_pos[0], j] for j in range(width) if j != door_pos[1]]
+
+    return blocks, agent_start, objects
+
+
 TEMPLATES = {
     "empty": empty,
     "four_rooms": four_rooms,
@@ -409,6 +454,7 @@ TEMPLATES = {
     "obstacle": obstacle,
     "two_step": two_step,
     "narrow": narrow,
+    "linked_door_test": linked_door_test,
 }
 
 

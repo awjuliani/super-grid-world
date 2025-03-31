@@ -12,19 +12,24 @@ class GridSymbolicRenderer(RendererInterface):
         "rewards": 2,
         "keys": 3,
         "doors": 4,
-        "walls": 5,
-        "warps": 6,
-        "trees": 7,
-        "fruits": 8,
-        "signs": 9,
-        "boxes": 10,
-        "pushable_boxes": 11,
+        "linked_doors": 5,
+        "pressure_plates": 6,
+        "levers": 7,
+        "walls": 8,
+        "warps": 9,
+        "trees": 10,
+        "fruits": 11,
+        "signs": 12,
+        "boxes": 13,
+        "pushable_boxes": 14,
     }
 
     def __init__(self, grid_shape: Tuple[int, int], window_size: int = None):
         self.grid_shape = grid_shape
         self.window_size = window_size
         self.num_channels = len(self.OBJECT_CHANNELS)
+        if set(self.OBJECT_CHANNELS.values()) != set(range(self.num_channels)):
+            raise ValueError("OBJECT_CHANNELS indices are not contiguous!")
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -58,19 +63,32 @@ class GridSymbolicRenderer(RendererInterface):
                 )  # Store agent index (+1 to avoid 0)
 
         # Render all object types from the environment
-        for obj_type, objects in env.objects.items():
-            if obj_type in self.OBJECT_CHANNELS:
-                channel_idx = self.OBJECT_CHANNELS[obj_type]
+        for obj_type_key, objects in env.objects.items():
+            channel_key = obj_type_key
+            if channel_key in self.OBJECT_CHANNELS:
+                channel_idx = self.OBJECT_CHANNELS[channel_key]
                 for obj in objects:
-                    if obj_type == "rewards":
-                        value = obj.value
-                        if isinstance(value, list):
-                            if value[1] == 1:  # Only include if active
-                                grid[obj.pos[0], obj.pos[1], channel_idx] = value[0]
-                        else:
-                            grid[obj.pos[0], obj.pos[1], channel_idx] = value
-                    else:
-                        grid[obj.pos[0], obj.pos[1], channel_idx] = 1
+                    if (
+                        0 <= obj.pos[0] < self.grid_shape[0]
+                        and 0 <= obj.pos[1] < self.grid_shape[1]
+                    ):
+                        value_to_set = 1
+
+                        if channel_key == "rewards":
+                            value = (
+                                obj.value[0]
+                                if isinstance(obj.value, list)
+                                else obj.value
+                            )
+                            value_to_set = value
+                        elif channel_key == "linked_doors":
+                            value_to_set = 2 if obj.is_open else 1
+                        elif channel_key == "levers":
+                            value_to_set = 2 if obj.activated else 1
+                        elif channel_key == "pressure_plates":
+                            pass
+
+                        grid[obj.pos[0], obj.pos[1], channel_idx] = value_to_set
 
         return grid
 
@@ -125,3 +143,8 @@ class GridSymbolicRenderer(RendererInterface):
         if object_type not in cls.OBJECT_CHANNELS:
             next_channel = len(cls.OBJECT_CHANNELS)
             cls.OBJECT_CHANNELS[object_type] = next_channel
+            cls.num_channels = len(cls.OBJECT_CHANNELS)
+            if set(cls.OBJECT_CHANNELS.values()) != set(range(cls.num_channels)):
+                raise ValueError(
+                    "OBJECT_CHANNELS indices became non-contiguous after adding!"
+                )

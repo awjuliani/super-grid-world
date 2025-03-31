@@ -2,10 +2,22 @@ import numpy as np
 import cv2 as cv
 from typing import Tuple, List, Dict, Any, Callable
 from gym import spaces
+import copy
 
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
-from sgw.object import Wall, Reward, Marker, Key, Door, Warp, Other
+from sgw.object import (
+    Wall,
+    Reward,
+    Marker,
+    Key,
+    Door,
+    Warp,
+    Other,
+    LinkedDoor,
+    PressurePlate,
+    Lever,
+)
 from sgw.enums import ControlType
 
 
@@ -39,6 +51,19 @@ class Grid2DRenderer(RendererInterface):
     BOX_BORDER = (139, 69, 19)  # Saddle brown
     PUSHABLE_BOX_FILL = (205, 133, 63)  # Peru (lighter brown)
     PUSHABLE_BOX_BORDER = (160, 82, 45)  # Sienna brown
+    LINKED_DOOR_CLOSED_FILL = (100, 70, 50)  # Darker brown for closed
+    LINKED_DOOR_CLOSED_BORDER = (70, 50, 40)
+    LINKED_DOOR_OPEN_FILL = (140, 100, 80)  # Lighter brown for open
+    LINKED_DOOR_OPEN_BORDER = (100, 70, 50)
+    PRESSURE_PLATE_INACTIVE_FILL = (192, 192, 192)  # Silver
+    PRESSURE_PLATE_INACTIVE_BORDER = (160, 160, 160)
+    PRESSURE_PLATE_ACTIVE_FILL = (218, 165, 32)  # Goldenrod (to indicate activation)
+    PRESSURE_PLATE_ACTIVE_BORDER = (184, 134, 11)
+    LEVER_BASE_FILL = (105, 105, 105)  # Dim gray
+    LEVER_BASE_BORDER = (85, 85, 85)
+    LEVER_HANDLE_INACTIVE_FILL = (255, 0, 0)  # Red (inactive)
+    LEVER_HANDLE_ACTIVE_FILL = (0, 255, 0)  # Green (active)
+    LEVER_HANDLE_BORDER = (50, 50, 50)
 
     # Dictionary mapping color names to RGB values for agents
     AGENT_COLOR_DICT = {
@@ -87,6 +112,9 @@ class Grid2DRenderer(RendererInterface):
         self.register_renderer("markers", self._render_markers)
         self.register_renderer("keys", self._render_keys)
         self.register_renderer("doors", self._render_doors)
+        self.register_renderer("linked_doors", self._render_linked_doors)
+        self.register_renderer("pressure_plates", self._render_pressure_plates)
+        self.register_renderer("levers", self._render_levers)
         self.register_renderer("warps", self._render_warps)
         self.register_renderer("other", self._render_other)
         self.register_renderer("trees", self._render_trees)
@@ -271,18 +299,121 @@ class Grid2DRenderer(RendererInterface):
             )
 
     def _render_doors(self, img: np.ndarray, doors: List[Door]) -> None:
+        # Standard doors (key operated)
         for door in doors:
             start, end = self.get_square_edges(door.pos)
-            if door.orientation == "h":
-                start = (start[0] - 2, start[1] + 5)
-                end = (end[0] + 2, end[1] - 5)
-            elif door.orientation == "v":
-                start = (start[0] + 5, start[1] - 2)
-                end = (end[0] - 5, end[1] + 2)
+            # Apply orientation adjustments if needed, similar to linked doors below
+            # For simplicity, current standard doors might just fill the square
+            # Let's assume they fill the square for now unless specific logic was intended
+            fill = (
+                self.DOOR_FILL if door.obstacle else self.BACKGROUND_COLOR
+            )  # Open if not obstacle
+            border = self.DOOR_BORDER if door.obstacle else self.GRID_LINE_COLOR
+            cv.rectangle(img, start, end, fill, -1)
+            cv.rectangle(img, start, end, border, self.block_border - 1)
+
+    def _render_linked_doors(self, img: np.ndarray, doors: List[LinkedDoor]) -> None:
+        # Linked doors (plate/lever operated)
+        for door in doors:
+            start, end = self.get_square_edges(door.pos)
+            if door.is_open:
+                fill_color = self.LINKED_DOOR_OPEN_FILL
+                border_color = self.LINKED_DOOR_OPEN_BORDER
+                # Draw as open passage (background color)
+                cv.rectangle(img, start, end, self.BACKGROUND_COLOR, -1)
+                # Optionally draw frame or indication it *was* a door
+                # Draw thin frame:
+                frame_thickness = 1
+                cv.rectangle(img, start, end, border_color, frame_thickness)
+
+            else:  # Door is closed
+                fill_color = self.LINKED_DOOR_CLOSED_FILL
+                border_color = self.LINKED_DOOR_CLOSED_BORDER
+                # Draw closed door, potentially adjusting for orientation
+                if door.orientation == "h":
+                    # Make horizontal doors look like a bar
+                    h_start = (start[0], start[1] + self.block_size // 4)
+                    h_end = (end[0], end[1] - self.block_size // 4)
+                    cv.rectangle(img, h_start, h_end, fill_color, -1)
+                    cv.rectangle(
+                        img, h_start, h_end, border_color, self.block_border - 1
+                    )
+                elif door.orientation == "v":
+                    # Make vertical doors look like a bar
+                    v_start = (start[0] + self.block_size // 4, start[1])
+                    v_end = (end[0] - self.block_size // 4, end[1])
+                    cv.rectangle(img, v_start, v_end, fill_color, -1)
+                    cv.rectangle(
+                        img, v_start, v_end, border_color, self.block_border - 1
+                    )
+                else:  # Default to full block if no orientation
+                    cv.rectangle(img, start, end, fill_color, -1)
+                    cv.rectangle(img, start, end, border_color, self.block_border - 1)
+
+    def _render_pressure_plates(
+        self, img: np.ndarray, plates: List[PressurePlate]
+    ) -> None:
+        """Render pressure plates as flat squares."""
+        # Need access to env state to know if plate is active (agent on it)
+        # This renderer currently doesn't get env state easily for non-agent renders.
+        # For now, render all as inactive. Activation state might require renderer refactor.
+        # TODO: Find a way to check if agent is on the plate to change color.
+        for plate in plates:
+            start, end = self.get_square_edges(plate.pos)
+            # Shrink slightly to make it look flat on the floor
+            inset = self.block_border
+            plate_start = (start[0] + inset, start[1] + inset)
+            plate_end = (end[0] - inset, end[1] - inset)
+
+            # Assume inactive for now
+            fill_color = self.PRESSURE_PLATE_INACTIVE_FILL
+            border_color = self.PRESSURE_PLATE_INACTIVE_BORDER
+
+            cv.rectangle(img, plate_start, plate_end, fill_color, -1)
+            cv.rectangle(img, plate_start, plate_end, border_color, 1)  # Thin border
+
+    def _render_levers(self, img: np.ndarray, levers: List[Lever]) -> None:
+        """Render levers with a base and a handle indicating state."""
+        for lever in levers:
+            start, end = self.get_square_edges(lever.pos)
+            center_x = (start[0] + end[0]) // 2
+            center_y = (start[1] + end[1]) // 2
+
+            # Draw base (small square)
+            base_size = self.block_size // 4
+            base_start = (center_x - base_size, center_y - base_size)
+            base_end = (center_x + base_size, center_y + base_size)
+            cv.rectangle(img, base_start, base_end, self.LEVER_BASE_FILL, -1)
+            cv.rectangle(img, base_start, base_end, self.LEVER_BASE_BORDER, 1)
+
+            # Draw handle (line indicating state)
+            handle_length = self.block_size // 3
+            handle_thickness = 3
+            if lever.activated:
+                # Point right when active
+                handle_end_x = center_x + handle_length
+                handle_end_y = center_y
+                handle_color = self.LEVER_HANDLE_ACTIVE_FILL
             else:
-                raise ValueError("Invalid door orientation")
-            cv.rectangle(img, start, end, self.DOOR_FILL, -1)
-            cv.rectangle(img, start, end, self.DOOR_BORDER, self.block_border - 1)
+                # Point left when inactive
+                handle_end_x = center_x - handle_length
+                handle_end_y = center_y
+                handle_color = self.LEVER_HANDLE_INACTIVE_FILL
+
+            cv.line(
+                img,
+                (center_x, center_y),
+                (handle_end_x, handle_end_y),
+                self.LEVER_HANDLE_BORDER,
+                handle_thickness + 2,
+            )  # Border
+            cv.line(
+                img,
+                (center_x, center_y),
+                (handle_end_x, handle_end_y),
+                handle_color,
+                handle_thickness,
+            )  # Fill
 
     def _render_warps(self, img: np.ndarray, warps: List[Warp]) -> None:
         for warp in warps:
@@ -527,8 +658,9 @@ class Grid2DRenderer(RendererInterface):
         img = self._create_base_image()
         self._render_gridlines(img)
 
+        # Iterate through registered renderers ensuring new keys are handled
         for key, renderer in self.object_renderers.items():
-            if key in env.objects:
+            if key in env.objects and env.objects[key]:  # Check if list is not empty
                 renderer(img, env.objects[key])
         return img
 
@@ -570,31 +702,58 @@ class Grid2DRenderer(RendererInterface):
         if self.cached_objects is None or self.cached_image is None:
             return True
 
-        # Check if object types have changed
+        # Check if object types (keys) have changed
         if set(self.cached_objects.keys()) != set(env.objects.keys()):
             return True
 
         # Check if the number of objects of each type has changed
         for key in self.cached_objects:
-            if len(self.cached_objects[key]) != len(env.objects[key]):
+            if key not in env.objects or len(self.cached_objects[key]) != len(
+                env.objects[key]
+            ):
                 return True
 
-        # Check if any object's position has changed
+        # Check if any object's position or relevant state has changed
         for key in self.cached_objects:
-            cached_positions = {tuple(obj.pos) for obj in self.cached_objects[key]}
-            current_positions = {tuple(obj.pos) for obj in env.objects[key]}
-            if cached_positions != current_positions:
-                return True
+            # Create sets/dicts for quick comparison based on object type
+            if key == "linked_doors":
+                cached_states = {
+                    (tuple(obj.pos), obj.is_open) for obj in self.cached_objects[key]
+                }
+                current_states = {
+                    (tuple(obj.pos), obj.is_open) for obj in env.objects[key]
+                }
+                if cached_states != current_states:
+                    return True
+            elif key == "levers":
+                cached_states = {
+                    (tuple(obj.pos), obj.activated) for obj in self.cached_objects[key]
+                }
+                current_states = {
+                    (tuple(obj.pos), obj.activated) for obj in env.objects[key]
+                }
+                if cached_states != current_states:
+                    return True
+            # Add checks for pressure plates if their visual state depends on agent pos
+            # elif key == 'pressure_plates': ...
+            else:  # Default position check for other types
+                cached_positions = {tuple(obj.pos) for obj in self.cached_objects[key]}
+                current_positions = {tuple(obj.pos) for obj in env.objects[key]}
+                if cached_positions != current_positions:
+                    return True
 
         return False
 
     def _update_cache(self, env: Any) -> None:
+        # Deep copy objects to cache their state
         self.cached_objects = {}
         for key, value in env.objects.items():
-            # Create a list of deep-copied objects using their copy methods
             self.cached_objects[key] = [
-                obj.copy() if hasattr(obj, "copy") else obj for obj in value
+                obj.copy() if hasattr(obj, "copy") else copy.deepcopy(obj)
+                for obj in value
             ]
+        # Re-render the base image with new states
+        self.cached_image = self._create_new_frame(env)
 
     # Helper methods to compute crop coordinates to remove duplicated logic
     def _compute_vertical_crop(

@@ -14,6 +14,9 @@ from sgw.object import (
     Box,
     Sign,
     PushableBox,
+    LinkedDoor,
+    PressurePlate,
+    Lever,
 )
 from sgw.enums import Action, ControlType  # Import necessary enums
 
@@ -59,9 +62,10 @@ class MockAgent:
 
 
 class MockEnv:
-    def __init__(self, grid_shape=(10, 10), objects=None, rng_seed=123):
+    def __init__(self, grid_shape=(10, 10), objects=None, agents=None, rng_seed=123):
         self.grid_shape = grid_shape
         self.objects = objects if objects is not None else {}
+        self.agents = agents if agents is not None else []
         self.rng = np.random.RandomState(rng_seed)
         self._check_target_return = True  # Default behavior for check_target
 
@@ -83,9 +87,26 @@ class MockEnv:
                         if obj.obstacle:
                             return False
                     else:  # Any object blocks if obstacles_only is False
+                        # Allow stepping on non-obstacle objects like plates
+                        if not obj.obstacle:
+                            continue
                         return False
+        # Check agent collision
+        for agent in self.agents:
+            if agent.get_position() == list(target_pos):
+                return False  # Cannot move into a square occupied by another agent
+
         # Allow controlling the return value for specific tests
         return self._check_target_return
+
+    def _find_object_at(self, pos):
+        """Helper to find any object at a given position."""
+        target_pos = list(pos)
+        for obj_list in self.objects.values():
+            for obj in obj_list:
+                if obj.pos == target_pos:
+                    return obj
+        return None
 
 
 # --- Existing Tests ---
@@ -692,19 +713,24 @@ def test_pushable_box_pre_step_fail_blocked():
     agent_pos = [1, 4]
     agent_looking_idx = 1  # East
     push_direction = [0, 1]  # East
+    target_box_pos = [1, 6]  # Position where the box would land
+    blocker_pos = target_box_pos  # Position of the blocking object
 
     agent = MockAgent(pos=agent_pos)
     agent.looking = agent_looking_idx
     pbox = PushableBox(box_pos)
-    env = MockEnv(grid_shape=(10, 10))
-    env.set_check_target_return(False)  # Mock that target pos is blocked
+    # Add a blocking object (e.g., a Wall) at the target push location
+    blocker = Wall(blocker_pos)
+    env = MockEnv(grid_shape=(10, 10), objects={"walls": [blocker]})
+    # No longer need env.set_check_target_return(False)
 
     allowed, message = pbox.pre_step_interaction(agent, push_direction, env)
 
     assert allowed is False
     assert pbox.pos == box_pos  # Position shouldn't change
     assert pbox.being_pushed is False
-    assert "tried to push a pushable box but it's blocked" in message
+    # Check for the more specific message from the implementation
+    assert f"blocked by {blocker.name}" in message
 
 
 def test_pushable_box_interact():
@@ -718,11 +744,335 @@ def test_pushable_box_interact():
 
 
 def test_pushable_box_step():
-    """Test step method for PushableBox (currently just calls super)."""
+    """Test step method for PushableBox (resets being_pushed)."""
     pbox = PushableBox([1, 5])
-    pbox.being_pushed = True  # Set state to see if step changes it (it shouldn't)
+    pbox.being_pushed = True  # Set state
     env = MockEnv()
     pbox.step(env)
-    # The base Object.step does nothing, so being_pushed should remain True
-    # It's reset by interact() or pre_step_interaction() failure
-    assert pbox.being_pushed is True
+    # The PushableBox.step method explicitly sets being_pushed to False
+    assert pbox.being_pushed is False
+
+
+# --- LinkedDoor Tests ---
+def test_linked_door_initialization():
+    """Test LinkedDoor initialization."""
+    pos = [2, 3]
+    linked_id = "door1"
+    orientation = 0
+    door = LinkedDoor(pos, linked_id, orientation)
+    assert door.pos == pos
+    assert door.linked_id == linked_id
+    assert door.orientation == orientation
+    assert door.obstacle is True  # Starts closed
+    assert door.is_open is False
+    assert door.consumable is False
+    assert door.terminal is False
+    assert door.name == "linked door"
+
+
+def test_linked_door_copy():
+    """Test LinkedDoor copy method."""
+    door = LinkedDoor([2, 3], "door1", 0)
+    door.obstacle = False
+    door.is_open = True
+    door_copy = door.copy()
+    assert door is not door_copy
+    assert door.pos == door_copy.pos
+    assert door.linked_id == door_copy.linked_id
+    assert door.orientation == door_copy.orientation
+    assert door.obstacle == door_copy.obstacle
+    assert door.is_open == door_copy.is_open
+    assert type(door) == type(door_copy)
+
+    door.pos = [2, 4]
+    door.obstacle = True
+    door.is_open = False
+    assert door_copy.pos == [2, 3]
+    assert door_copy.obstacle is False
+    assert door_copy.is_open is True
+
+
+def test_linked_door_activate_deactivate():
+    """Test activating and deactivating a LinkedDoor."""
+    door = LinkedDoor([2, 3], "door1")
+    activator = Object([0, 0])  # Mock activator
+    activator.name = "TestActivator"
+    deactivator = Object([0, 0])  # Mock deactivator
+    deactivator.name = "TestDeactivator"
+
+    # Activate
+    message = door.activate(activator)
+    assert door.obstacle is False
+    assert door.is_open is True
+    assert f"opened by {activator.name}" in message
+
+    # Try activating again (should do nothing)
+    message = door.activate(activator)
+    assert message is None
+
+    # Deactivate
+    message = door.deactivate(deactivator)
+    assert door.obstacle is True
+    assert door.is_open is False
+    assert f"closed" in message  # Basic check, specific reasons tested with plate/lever
+
+    # Try deactivating again (should do nothing)
+    message = door.deactivate(deactivator)
+    assert message is None
+
+
+def test_linked_door_interact_closed():
+    """Test agent interaction with a closed LinkedDoor."""
+    agent = MockAgent(pos=[2, 3])
+    door = LinkedDoor([2, 3], "door1")
+    message = door.interact(agent)
+    assert door.obstacle is True
+    assert "tried to open a locked linked door" in message
+
+
+def test_linked_door_interact_open():
+    """Test agent interaction with an open LinkedDoor."""
+    agent = MockAgent(pos=[2, 3])
+    door = LinkedDoor([2, 3], "door1")
+    door.activate()  # Open the door
+    message = door.interact(agent)
+    assert door.obstacle is False
+    assert message is None  # Agent can pass through
+
+
+# --- PressurePlate Tests ---
+def test_pressure_plate_initialization():
+    """Test PressurePlate initialization."""
+    pos = [4, 5]
+    target_id = "door1"
+    plate = PressurePlate(pos, target_id)
+    assert plate.pos == pos
+    assert plate.target_linked_id == target_id
+    assert plate.obstacle is False
+    assert plate.consumable is False
+    assert plate.terminal is False
+    assert plate.name == "pressure plate"
+    assert plate.is_pressed is False
+
+
+def test_pressure_plate_copy():
+    """Test PressurePlate copy method."""
+    plate = PressurePlate([4, 5], "door1")
+    plate.is_pressed = True
+    plate_copy = plate.copy()
+    assert plate is not plate_copy
+    assert plate.pos == plate_copy.pos
+    assert plate.target_linked_id == plate_copy.target_linked_id
+    assert plate.is_pressed == plate_copy.is_pressed
+    assert type(plate) == type(plate_copy)
+
+    plate.pos = [4, 6]
+    plate.is_pressed = False
+    assert plate_copy.pos == [4, 5]
+    assert plate_copy.is_pressed is True
+
+
+def test_pressure_plate_step_agent_press_release():
+    """Test agent pressing and releasing a pressure plate."""
+    plate_pos = [4, 5]
+    door_pos = [2, 3]
+    target_id = "door1"
+
+    agent = MockAgent(pos=[0, 0])  # Start away from plate
+    plate = PressurePlate(plate_pos, target_id)
+    door = LinkedDoor(door_pos, target_id)
+    env = MockEnv(
+        objects={"pressure_plates": [plate], "linked_doors": [door]}, agents=[agent]
+    )
+
+    # Step 1: Agent not on plate
+    message = plate.step(env)
+    assert plate.is_pressed is False
+    assert door.is_open is False
+    assert message is None
+
+    # Step 2: Agent moves onto plate
+    agent.pos = plate_pos
+    message = plate.step(env)
+    assert plate.is_pressed is True
+    assert door.is_open is True
+    assert f"{agent.name} pressed {plate.name}" in message
+    assert f"{door.name} (ID: {target_id}) was opened by {plate.name}" in message
+
+    # Step 3: Agent still on plate
+    message = plate.step(env)
+    assert plate.is_pressed is True
+    assert door.is_open is True
+    assert message is None  # No state change
+
+    # Step 4: Agent moves off plate
+    agent.pos = [0, 0]
+    message = plate.step(env)
+    assert plate.is_pressed is False
+    assert door.is_open is False
+    assert (
+        f"{door.name} (ID: {target_id}) was closed because pressure was released"
+        in message
+    )
+
+
+def test_pressure_plate_step_box_press_release():
+    """Test pushable box pressing and releasing a pressure plate."""
+    plate_pos = [4, 5]
+    door_pos = [2, 3]
+    box_start_pos = [0, 0]
+    target_id = "door1"
+
+    plate = PressurePlate(plate_pos, target_id)
+    door = LinkedDoor(door_pos, target_id)
+    box = PushableBox(box_start_pos)
+    # Need an agent to 'push' the box, but agent position isn't checked by plate directly
+    agent = MockAgent(pos=[-1, -1])
+    env = MockEnv(
+        objects={
+            "pressure_plates": [plate],
+            "linked_doors": [door],
+            "pushable_boxes": [box],
+        },
+        agents=[agent],
+    )
+
+    # Step 1: Box not on plate
+    message = plate.step(env)
+    assert plate.is_pressed is False
+    assert door.is_open is False
+    assert message is None
+
+    # Step 2: Box moved onto plate
+    box.pos = plate_pos
+    message = plate.step(env)
+    assert plate.is_pressed is True
+    assert door.is_open is True
+    assert f"{box.name} pressed {plate.name}" in message  # Box name should be detected
+    assert f"{door.name} (ID: {target_id}) was opened by {plate.name}" in message
+
+    # Step 3: Box still on plate
+    message = plate.step(env)
+    assert plate.is_pressed is True
+    assert door.is_open is True
+    assert message is None
+
+    # Step 4: Box moved off plate
+    box.pos = [0, 0]
+    message = plate.step(env)
+    assert plate.is_pressed is False
+    assert door.is_open is False
+    assert (
+        f"{door.name} (ID: {target_id}) was closed because pressure was released"
+        in message
+    )
+
+
+def test_pressure_plate_interact():
+    """Test agent interact method on pressure plate (should do nothing directly)."""
+    plate_pos = [4, 5]
+    target_id = "door1"
+    agent = MockAgent(pos=plate_pos)
+    plate = PressurePlate(plate_pos, target_id)
+    door = LinkedDoor([2, 3], target_id)
+    env = MockEnv(
+        objects={"pressure_plates": [plate], "linked_doors": [door]}, agents=[agent]
+    )
+
+    message = plate.interact(agent, env)
+    assert message is None
+    # State change happens in step(), not interact()
+    assert plate.is_pressed is False
+    assert door.is_open is False
+
+
+# --- Lever Tests ---
+def test_lever_initialization():
+    """Test Lever initialization."""
+    pos = [6, 7]
+    target_id = "door2"
+    lever = Lever(pos, target_id)
+    assert lever.pos == pos
+    assert lever.target_linked_id == target_id
+    assert lever.obstacle is False
+    assert lever.consumable is False
+    assert lever.terminal is False
+    assert lever.name == "lever"
+    assert lever.activated is False
+
+
+def test_lever_copy():
+    """Test Lever copy method."""
+    lever = Lever([6, 7], "door2")
+    lever.activated = True
+    lever_copy = lever.copy()
+    assert lever is not lever_copy
+    assert lever.pos == lever_copy.pos
+    assert lever.target_linked_id == lever_copy.target_linked_id
+    assert lever.activated == lever_copy.activated
+    assert type(lever) == type(lever_copy)
+
+    lever.pos = [6, 8]
+    lever.activated = False
+    assert lever_copy.pos == [6, 7]
+    assert lever_copy.activated is True
+
+
+def test_lever_interact_toggle():
+    """Test agent interacting with a lever to toggle a linked door."""
+    lever_pos = [6, 7]
+    door_pos = [1, 1]
+    target_id = "door2"
+
+    agent = MockAgent(pos=lever_pos)  # Agent needs to be at lever pos for interact
+    lever = Lever(lever_pos, target_id)
+    door = LinkedDoor(door_pos, target_id)
+    env = MockEnv(objects={"levers": [lever], "linked_doors": [door]}, agents=[agent])
+
+    # Interaction 1: Activate lever, open door
+    message = lever.interact(agent, env)
+    assert lever.activated is True
+    assert door.is_open is True
+    assert door.obstacle is False
+    assert f"{agent.name} activated the {lever.name}" in message
+    assert f"{door.name} (ID: {target_id}) was opened by {lever.name}" in message
+
+    # Interaction 2: Deactivate lever, close door
+    message = lever.interact(agent, env)
+    assert lever.activated is False
+    assert door.is_open is False
+    assert door.obstacle is True
+    assert f"{agent.name} deactivated the {lever.name}" in message
+    assert f"{door.name} (ID: {target_id}) was closed by {lever.name}" in message
+
+    # Interaction 3: Activate lever again, open door again
+    message = lever.interact(agent, env)
+    assert lever.activated is True
+    assert door.is_open is True
+    assert door.obstacle is False
+    assert f"{agent.name} activated the {lever.name}" in message
+    assert f"{door.name} (ID: {target_id}) was opened by {lever.name}" in message
+
+
+def test_lever_interact_no_target():
+    """Test interacting with a lever that has no matching target."""
+    lever_pos = [6, 7]
+    target_id = "nonexistent_door"
+
+    agent = MockAgent(pos=lever_pos)
+    lever = Lever(lever_pos, target_id)
+    env = MockEnv(objects={"levers": [lever]}, agents=[agent])  # No door in env
+
+    # Interaction 1: Activate lever
+    message = lever.interact(agent, env)
+    assert lever.activated is True
+    assert f"{agent.name} activated the {lever.name}" in message
+    assert "opened" not in message  # No door message
+    assert "closed" not in message
+
+    # Interaction 2: Deactivate lever
+    message = lever.interact(agent, env)
+    assert lever.activated is False
+    assert f"{agent.name} deactivated the {lever.name}" in message
+    assert "opened" not in message
+    assert "closed" not in message

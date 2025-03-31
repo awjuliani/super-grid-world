@@ -43,12 +43,13 @@ class Object:
             self.terminal,
         )
 
-    def interact(self, agent: Any) -> Optional[str]:
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
         """
         Called when agent interacts with object.
 
         Args:
             agent: The agent interacting with this object
+            env: The environment instance (optional)
 
         Returns:
             Optional event message string
@@ -89,8 +90,8 @@ class Reward(Object):
     def copy(self) -> "Reward":
         return type(self)(list(self.pos), self.value)
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         agent.collect_reward(self.value)
         return f"{agent.name} collected {self.name} of {self.value}"
 
@@ -105,8 +106,8 @@ class Key(Object):
     def copy(self) -> "Key":
         return type(self)(list(self.pos))
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         agent.collect_object(self)
         return f"{agent.name} collected a {self.name}"
 
@@ -139,8 +140,8 @@ class Door(Object):
             return True, f"{agent.name} unlocked and went through a {self.name}"
         return False, f"{agent.name} tried to open a {self.name} but had no key"
 
-    def interact(self, agent: Any) -> Optional[str]:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
+        super().interact(agent, env)
         success, message = self.try_unlock(agent)
         return message
 
@@ -161,8 +162,8 @@ class Warp(Object):
     def copy(self) -> "Warp":
         return type(self)(list(self.pos), list(self.target))
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         agent.teleport(self.target)
         return f"{agent.name} used a {self.name} to teleport"
 
@@ -189,8 +190,8 @@ class Other(Object):
     def copy(self) -> "Other":
         return type(self)(list(self.pos), self.name)
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         agent.collect_object(self)
         return f"{agent.name} collected {self.name}"
 
@@ -252,8 +253,8 @@ class Fruit(Object):
     def copy(self) -> "Fruit":
         return type(self)(list(self.pos))
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         agent.collect_object(self)
         return f"{agent.name} collected a {self.name}"
 
@@ -271,8 +272,8 @@ class Box(Object):
         new_box.contents = self.contents.copy()
         return new_box
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         if agent.inventory:
             # Put item in box
             item = agent.inventory.pop(0)  # Remove and get first item from inventory
@@ -297,8 +298,8 @@ class Sign(Object):
     def copy(self) -> "Sign":
         return type(self)(list(self.pos), self.message)
 
-    def interact(self, agent: Any) -> str:
-        super().interact(agent)
+    def interact(self, agent: Any, env: Any = None) -> str:
+        super().interact(agent, env)
         return f"{agent.name} read the sign: '{self.message}'"
 
 
@@ -340,22 +341,252 @@ class PushableBox(Object):
         new_box_pos = [self.pos[0] + push_direction[0], self.pos[1] + push_direction[1]]
 
         # Check if the new position is valid (if env is provided)
-        # Use obstacles_only=False to prevent pushing onto any object
-        if env is None or not env.check_target(new_box_pos, obstacles_only=False):
-            return False, f"{agent.name} tried to push a {self.name} but it's blocked"
+        if env:
+            # Check grid bounds
+            if not (
+                -1 < new_box_pos[0] < env.grid_shape[0]
+                and -1 < new_box_pos[1] < env.grid_shape[1]
+            ):
+                return (
+                    False,
+                    f"{agent.name} tried to push a {self.name} but it hit the boundary",
+                )
+
+            # Check for blocking objects or other agents at the target location
+            target_object = env._find_object_at(new_box_pos)
+            if target_object:
+                # Block if the object is an obstacle or another pushable box
+                if target_object.obstacle or isinstance(target_object, PushableBox):
+                    return (
+                        False,
+                        f"{agent.name} tried to push a {self.name} but it's blocked by {target_object.name}",
+                    )
+                # Allow pushing onto non-obstacle objects (like pressure plates)
+
+            # Check for other agents
+            for other_agent in env.agents:
+                # Check if another agent (not the one pushing) is at the target spot
+                if other_agent != agent and other_agent.get_position() == new_box_pos:
+                    return (
+                        False,
+                        f"{agent.name} tried to push a {self.name} but {other_agent.name} is in the way",
+                    )
 
         # Update the box's position
         self.pos = new_box_pos
-        self.being_pushed = True
+        self.being_pushed = True  # Mark the box as being pushed for this step
 
         # Return True to allow the agent to move to the box's original position
         return True, f"{agent.name} pushed a {self.name}"
 
-    def interact(self, agent: Any) -> None:
-        """Called when the agent interacts with the box directly."""
-        super().interact(agent)
-        self.being_pushed = False
+    def interact(self, agent: Any, env: Any = None) -> None:
+        """Called when the agent interacts with the box directly (e.g., steps off it)."""
+        # Reset being_pushed when agent moves off the box's original square or interacts differently
+        # This might need adjustment based on exact interaction timing, but for now,
+        # let's assume interact is called when the push action concludes or agent moves away.
+        super().interact(agent, env)
+        self.being_pushed = (
+            False  # No longer being actively pushed in this immediate interaction
+        )
         return None
 
     def step(self, env: Any) -> None:
+        """Called each environment step."""
+        # Reset being_pushed flag at the beginning of the next step if it wasn't reset by interact
+        # Ensures the state is correct even if no direct interaction happened
         super().step(env)
+        self.being_pushed = False
+
+
+class LinkedDoor(Object):
+    """A door that is linked to and activated by other objects like levers or plates."""
+
+    def __init__(self, pos: List[int], linked_id: Any, orientation: Any = None):
+        super().__init__(pos, obstacle=True, consumable=False, terminal=False)
+        self.linked_id = linked_id
+        self.orientation = orientation  # Optional, for visual rendering
+        self.name = "linked door"
+        self.is_open = False
+
+    def copy(self) -> "LinkedDoor":
+        new_door = type(self)(list(self.pos), self.linked_id, self.orientation)
+        new_door.obstacle = self.obstacle
+        new_door.is_open = self.is_open
+        return new_door
+
+    def activate(self, activator: Any = None, env: Any = None) -> Optional[str]:
+        """Opens the door."""
+        if not self.is_open:
+            self.obstacle = False
+            self.is_open = True
+            # Add activator name if available
+            activator_name = getattr(activator, "name", "Something")
+            return f"{self.name} (ID: {self.linked_id}) was opened by {activator_name}"
+        return None
+
+    def deactivate(self, deactivator: Any = None, env: Any = None) -> Optional[str]:
+        """Closes the door."""
+        if self.is_open:
+            self.obstacle = True
+            self.is_open = False
+            # Add deactivator info if available
+            deactivator_info = ""
+            if isinstance(deactivator, PressurePlate):
+                deactivator_info = (
+                    f" because pressure was released from {deactivator.name}"
+                )
+            elif isinstance(deactivator, Lever):
+                deactivator_info = f" by {deactivator.name}"
+
+            return f"{self.name} (ID: {self.linked_id}) was closed{deactivator_info}"
+        return None
+
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
+        """Called when agent tries to interact (e.g., walk onto) the door."""
+        super().interact(agent, env)
+        if self.is_open:
+            return None  # Agent walks through freely
+        else:
+            return f"{agent.name} tried to open a locked {self.name}"
+
+
+class PressurePlate(Object):
+    """A plate that activates a linked object when stepped on, and deactivates when empty."""
+
+    def __init__(self, pos: List[int], target_linked_id: Any):
+        super().__init__(pos, obstacle=False, consumable=False, terminal=False)
+        self.target_linked_id = target_linked_id
+        self.name = "pressure plate"
+        self.is_pressed = False  # Track activation state
+
+    def copy(self) -> "PressurePlate":
+        new_plate = type(self)(list(self.pos), self.target_linked_id)
+        new_plate.is_pressed = self.is_pressed  # Copy state
+        return new_plate
+
+    def _find_target(self, env: Any) -> Optional[LinkedDoor]:
+        """Finds the linked door in the environment."""
+        if "linked_doors" in env.objects:
+            for door in env.objects["linked_doors"]:
+                if (
+                    hasattr(door, "linked_id")
+                    and door.linked_id == self.target_linked_id
+                ):
+                    return door
+        return None
+
+    def _check_if_pressed(self, env: Any) -> bool:
+        """Check if an agent or pushable box is currently on the plate."""
+        # Check agents
+        for agent in env.agents:
+            if agent.pos == self.pos:
+                return True
+        # Check pushable boxes
+        if "pushable_boxes" in env.objects:
+            for box in env.objects["pushable_boxes"]:
+                if box.pos == self.pos:
+                    return True
+        return False
+
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
+        """Called when agent steps onto the plate."""
+        # Activation happens implicitly via step logic now,
+        # interact can just call the base method or be removed if no specific on-step-on event needed.
+        # Let's keep it simple and let step handle it.
+        super().interact(agent, env)
+        # We could potentially force an immediate check/activation here,
+        # but relying on the step ensures consistency with boxes too.
+        # The activation will happen in the step() method called shortly after.
+        return None
+
+    def step(self, env: Any) -> Optional[str]:
+        """Called each step to check activation status."""
+        super().step(env)
+        currently_pressed = self._check_if_pressed(env)
+        message = None
+
+        if currently_pressed and not self.is_pressed:
+            # Plate just became pressed
+            self.is_pressed = True
+            target_door = self._find_target(env)
+            if target_door:
+                message = target_door.activate(self, env)
+                if message:
+                    # Generate a clear event message
+                    activator_name = "Something"
+                    for agent in env.agents:
+                        if agent.pos == self.pos:
+                            activator_name = agent.name
+                            break
+                    if (
+                        activator_name == "Something"
+                        and "pushable_boxes" in env.objects
+                    ):
+                        for box in env.objects["pushable_boxes"]:
+                            if box.pos == self.pos:
+                                activator_name = box.name
+                                break
+                    message = f"{activator_name} pressed {self.name}. {message}"
+
+        elif not currently_pressed and self.is_pressed:
+            # Plate just became unpressed
+            self.is_pressed = False
+            target_door = self._find_target(env)
+            if target_door:
+                message = target_door.deactivate(self, env)
+                # Message from deactivate already includes cause
+
+        return message
+
+
+class Lever(Object):
+    """A lever that toggles the state of a linked object when interacted with."""
+
+    def __init__(self, pos: List[int], target_linked_id: Any):
+        super().__init__(pos, obstacle=False, consumable=False, terminal=False)
+        self.target_linked_id = target_linked_id
+        self.name = "lever"
+        self.activated = False  # Represents the lever's own state (e.g., pulled or not)
+
+    def copy(self) -> "Lever":
+        new_lever = type(self)(list(self.pos), self.target_linked_id)
+        new_lever.activated = self.activated
+        return new_lever
+
+    def _find_target(self, env: Any) -> Optional[LinkedDoor]:
+        """Finds the linked door in the environment."""
+        # Assumes target is always a LinkedDoor for now
+        if "linked_doors" in env.objects:
+            for door in env.objects["linked_doors"]:
+                if (
+                    hasattr(door, "linked_id")
+                    and door.linked_id == self.target_linked_id
+                ):
+                    return door
+        return None
+
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
+        """Called when agent uses the INTERACT action on the lever."""
+        super().interact(agent, env)
+
+        # Toggle the lever's state
+        self.activated = not self.activated
+        lever_state_msg = "activated" if self.activated else "deactivated"
+        base_message = f"{agent.name} {lever_state_msg} the {self.name}."
+
+        door_message = None
+        if env:
+            target_door = self._find_target(env)
+            if target_door:
+                if self.activated:
+                    # If lever is now active, try to activate the door
+                    door_message = target_door.activate(self, env)
+                else:
+                    # If lever is now inactive, try to deactivate the door
+                    door_message = target_door.deactivate(self, env)
+
+        # Combine messages
+        if door_message:
+            return f"{base_message} {door_message}"
+        else:
+            return base_message

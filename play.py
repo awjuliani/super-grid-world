@@ -38,8 +38,8 @@ def play_game():
     parser.add_argument(
         "--template",
         type=str,
-        default="two_rooms",
-        help="Template name for the environment (default: two_rooms)",
+        default="linked_door_test",
+        help="Template name for the environment (default: linked_door_test)",
     )
     parser.add_argument(
         "--obs_type",

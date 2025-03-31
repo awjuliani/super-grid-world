@@ -221,23 +221,33 @@ class GridLangRenderer(RendererInterface):
                 agent_looking=agent_looking,
             )
 
-            # Skip objects beyond field of view
+            # Skip objects beyond field of view or outside egocentric window
             if distance > field_of_view:
                 continue
-
-            # In egocentric mode, also check if in visible window
             if agent_looking is not None and control_type == ControlType.egocentric:
                 if not self._is_in_visible_window(
                     obj.pos, agent_pos, field_of_view, agent_looking
                 ):
                     continue
 
-            # Format description
+            # Format description based on object type and state
+            obj_name = obj.name
+            state_desc = ""
+            if hasattr(obj, "is_open") and obj_name == "linked door":
+                state_desc = " (open)" if obj.is_open else " (closed)"
+            elif hasattr(obj, "activated") and obj_name == "lever":
+                state_desc = " (activated)" if obj.activated else " (inactive)"
+            elif obj_name == "pressure plate":
+                # TODO: Check if agent is on the plate to add "(pressed)" state
+                pass  # No state info easily available here yet
+
+            full_name = f"{obj_name}{state_desc}"
+
             if direction == "same position":
-                descriptions.append(f"You see a {obj.name} at your position.")
+                descriptions.append(f"You see a {full_name} at your position.")
             else:
                 descriptions.append(
-                    f"You see a {obj.name} {direction} of you, {distance} "
+                    f"You see a {full_name} {direction} of you, {distance} "
                     f"{'meter' if distance == 1 else 'meters'} away."
                 )
 
@@ -343,33 +353,45 @@ class GridLangRenderer(RendererInterface):
     def _get_third_person_object_descriptions(self, objects) -> List[str]:
         """Generate descriptions for objects using cardinal directions."""
         descriptions = []
-        # Group objects by type for more concise descriptions
         objects_by_type = {}
 
         for obj in objects:
-            obj_type = obj.name
+            obj_type = obj.name  # Use name as the primary type identifier
             if obj_type not in objects_by_type:
                 objects_by_type[obj_type] = []
             objects_by_type[obj_type].append(obj)
 
-        # Generate descriptions for each object type
         for obj_type, obj_list in objects_by_type.items():
-            if len(obj_list) == 1:
-                obj = obj_list[0]
+            obj_descriptions = []
+            for obj in obj_list:
                 position_desc = self._describe_position_relative_to_north_west(obj.pos)
-                descriptions.append(f"There is a {obj_type} {position_desc}.")
-            else:
-                # For multiple objects of the same type, list all positions
-                positions = [
-                    self._describe_position_relative_to_north_west(obj.pos)
-                    for obj in obj_list
-                ]
-                if len(positions) == 2:
-                    pos_str = f"{positions[0]} and {positions[1]}"
-                else:
-                    pos_str = ", ".join(positions[:-1]) + f", and {positions[-1]}"
+                state_desc = ""
+                if hasattr(obj, "is_open") and obj_type == "linked door":
+                    state_desc = " (open)" if obj.is_open else " (closed)"
+                elif hasattr(obj, "activated") and obj_type == "lever":
+                    state_desc = " (activated)" if obj.activated else " (inactive)"
+                elif obj_type == "pressure plate":
+                    # TODO: Check env state for agent presence if needed
+                    pass
+
+                obj_descriptions.append(f"{position_desc}{state_desc}")
+
+            if len(obj_list) == 1:
+                # Include state in the name for single objects
+                full_name = f"{obj_type}{state_desc}" if state_desc else obj_type
                 descriptions.append(
-                    f"There are {len(obj_list)} {obj_type}s located {pos_str}."
+                    f"There is a {full_name} located {obj_descriptions[0].replace(state_desc, '')}."
+                )  # Avoid duplicate state
+            else:
+                # For multiple objects, list positions (optionally with states)
+                pos_str = ", ".join(obj_descriptions)
+                # Adjust pluralization if needed
+                plural_obj_type = (
+                    obj_type + "s" if not obj_type.endswith("s") else obj_type
+                )
+                # Example: "There are 2 levers located at ... (activated), and at ... (inactive)."
+                descriptions.append(
+                    f"There are {len(obj_list)} {plural_obj_type} located {pos_str}."
                 )
 
         return descriptions
@@ -442,7 +464,6 @@ class GridLangRenderer(RendererInterface):
 
     def _generate_grid_overview(self, env) -> List[str]:
         """Generate a high-level overview of the grid for third-person observations."""
-        # Create a summary of object counts and their distribution
         object_counts = {}
         region_distribution = {
             "north-west": [],
@@ -456,17 +477,23 @@ class GridLangRenderer(RendererInterface):
             "south-east": [],
         }
 
-        # Count objects by type
-        for obj_type, obj_list in env.objects.items():
+        # Count objects by type and track distribution
+        for obj_type_key, obj_list in env.objects.items():  # Iterate env.objects keys
             if obj_list:
-                object_counts[obj_type] = len(obj_list)
+                # Use the name of the first object as representative type for counting/distribution
+                # (Assumes lists contain objects of the same type corresponding to the key)
+                if obj_type_key in ["linked_doors", "pressure_plates", "levers"]:
+                    obj_type_name = obj_list[0].name
+                else:  # Fallback for existing types if needed
+                    obj_type_name = obj_type_key.replace("_", " ").rstrip("s")
 
-                # Track distribution across regions
+                object_counts[obj_type_name] = len(obj_list)
+
                 for obj in obj_list:
                     region = self._get_region(obj.pos)
                     if region in region_distribution:
-                        if obj_type not in region_distribution[region]:
-                            region_distribution[region].append(obj_type)
+                        if obj_type_name not in region_distribution[region]:
+                            region_distribution[region].append(obj_type_name)
 
         # Generate overview text
         overview = ["Grid overview:"]
@@ -474,7 +501,8 @@ class GridLangRenderer(RendererInterface):
         # Add object counts
         if object_counts:
             count_strs = [
-                f"{count} {obj_type}" + ("s" if count > 1 else "")
+                f"{count} {obj_type}"
+                + ("s" if count > 1 and not obj_type.endswith("s") else "")
                 for obj_type, count in object_counts.items()
             ]
             overview.append("The environment contains " + ", ".join(count_strs) + ".")
