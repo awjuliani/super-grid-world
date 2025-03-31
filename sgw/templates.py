@@ -2,7 +2,12 @@ import sgw.utils.base_utils as base_utils
 from sgw.object import Wall, Reward, Key, Door, Warp, Marker, Other, PushableBox
 
 
-def default_agent_start(height, width, offset=2):
+DEFAULT_AGENT_START_OFFSET = 2
+DEFAULT_REWARD_VALUE = 1.0
+DEFAULT_REWARD_POS = [1, 1]
+
+
+def default_agent_start(height, width, offset=DEFAULT_AGENT_START_OFFSET):
     """Returns the default agent start position."""
     return [height - offset, width - offset]
 
@@ -12,15 +17,24 @@ def grid_coords(height, width):
     return ((i, j) for i in range(height) for j in range(width))
 
 
-def get_empty_objects(reward_pos=[1, 1], reward_value=1.0):
-    """Returns a default empty objects dictionary with a single reward."""
+def get_empty_objects(
+    reward_pos=None, reward_value=DEFAULT_REWARD_VALUE
+) -> dict[str, list]:
+    """
+    Returns a default objects dictionary initialized with standard keys
+    and optionally a single reward.
+    """
+    if reward_pos is None:
+        reward_pos = DEFAULT_REWARD_POS
     return {
+        "walls": [],  # Walls will be added later in generate_layout
         "rewards": [Reward(reward_pos, reward_value)],
         "markers": [],
         "keys": [],
         "doors": [],
         "warps": [],
         "other": [],
+        "pushable_boxes": [],
     }
 
 
@@ -29,21 +43,36 @@ def four_rooms(height: int, width: int):
     agent_start = default_agent_start(height, width)
     mid_w = width // 2
     mid_h = height // 2
-    # Adjust earl_mid and late_mid for grid sizes
-    earl_mid_w = mid_w // 2 + 1
-    late_mid_w = mid_w + earl_mid_w - (1 if width == 11 else 2)
-    earl_mid_h = mid_h // 2 + 1
-    late_mid_h = mid_h + earl_mid_h - (1 if height == 11 else 2)
-    # Vertical and horizontal block lines with removed bottlenecks
-    blocks = [[mid_h, i] for i in range(width)] + [[i, mid_w] for i in range(height)]
+
+    # Calculate passage coordinates, adjusting for grid size parity
+    # These ensure passages are roughly centered within each wall segment
+    passage_offset_w = mid_w // 2 + 1
+    passage_offset_h = mid_h // 2 + 1
+    passage_w1 = passage_offset_w
+    passage_w2 = (
+        mid_w + passage_offset_w - (1 if width == 11 else 2)
+    )  # Adjust based on common size
+    passage_h1 = passage_offset_h
+    passage_h2 = (
+        mid_h + passage_offset_h - (1 if height == 11 else 2)
+    )  # Adjust based on common size
+
+    # Define wall lines
+    vert_wall = [[mid_h, i] for i in range(width)]
+    horz_wall = [[i, mid_w] for i in range(height)]
+    blocks = vert_wall + horz_wall
+
+    # Define passage coordinates (bottlenecks)
     bottlenecks = [
-        [mid_h, earl_mid_w],
-        [mid_h, late_mid_w],
-        [earl_mid_h, mid_w],
-        [late_mid_h, mid_w],
+        [mid_h, passage_w1],
+        [mid_h, passage_w2],
+        [passage_h1, mid_w],
+        [passage_h2, mid_w],
     ]
+    # Remove passages from walls
     blocks = [b for b in blocks if b not in bottlenecks]
-    objects = get_empty_objects()
+
+    objects = get_empty_objects()  # Start with default objects
     return blocks, agent_start, objects
 
 
@@ -51,22 +80,26 @@ def four_rooms_split(height: int, width: int):
     """Creates a four rooms layout with split design."""
     mid_w = width // 2
     mid_h = height // 2
+
+    # Calculate coordinates relative to the center
     earl_mid_w = mid_w // 2
     earl_mid_h = mid_h // 2
+    # Adjust late midpoints based on common size parity
     late_mid_w = mid_w + earl_mid_w + (1 if width == 11 else 0)
     late_mid_h = mid_h + earl_mid_h + (1 if height == 11 else 0)
-    agent_start = [height - 3, width - 3]
-    objects = {
-        "rewards": [Reward([earl_mid_h, earl_mid_w], 1.0)],
-        "markers": [],
-        "keys": [Key([earl_mid_h, late_mid_w])],
-        "doors": [Door([earl_mid_h, mid_w], "v")],
-        "warps": [Warp([late_mid_h, earl_mid_w], [earl_mid_h + 1, late_mid_w])],
-        "other": [],
-    }
-    # Build blocks for multiple rows
+
+    agent_start = [height - 3, width - 3]  # Specific start for this layout
+
+    # Define specific objects for this layout
+    objects = get_empty_objects(reward_pos=[earl_mid_h, earl_mid_w], reward_value=1.0)
+    objects["keys"] = [Key([earl_mid_h, late_mid_w])]
+    objects["doors"] = [Door([earl_mid_h, mid_w], "v")]
+    objects["warps"] = [Warp([late_mid_h, earl_mid_w], [earl_mid_h + 1, late_mid_w])]
+
+    # Build walls (three rows thick horizontal wall)
     blocks = [[mid_h + delta, i] for delta in (-1, 0, 1) for i in range(width)]
-    # Remove bottlenecks
+
+    # Define passage coordinates (bottlenecks)
     bottlenecks = [
         [earl_mid_h, mid_w - 1],
         [earl_mid_h, mid_w],
@@ -75,6 +108,7 @@ def four_rooms_split(height: int, width: int):
         [late_mid_h, mid_w],
         [late_mid_h, mid_w + 1],
     ]
+    # Remove passages from walls
     blocks = [b for b in blocks if b not in bottlenecks]
     return blocks, agent_start, objects
 
@@ -121,21 +155,22 @@ def two_rooms(height: int, width: int):
     mid = height // 2
     half_mid = mid // 2
     agent_start = default_agent_start(height, width)
-    objects = {
-        "rewards": [Reward([1, mid], 1.0)],
-        "markers": [],
-        "keys": [Key([mid + half_mid, mid - half_mid])],
-        "doors": [Door([mid, mid], "h")],
-        "warps": [],
-        "other": [],
-        "pushable_boxes": [PushableBox([mid - half_mid, mid + half_mid])],
-    }
+
+    # Define specific objects for this layout
+    objects = get_empty_objects(reward_pos=[1, mid], reward_value=1.0)
+    objects["keys"] = [Key([mid + half_mid, mid - half_mid])]
+    objects["doors"] = [Door([mid, mid], "h")]
+    objects["pushable_boxes"] = [PushableBox([mid - half_mid, mid + half_mid])]
+
+    # Define wall line
     blocks = [[mid, i] for i in range(width)]
     # Remove door position
     blocks = [b for b in blocks if b != [mid, mid]]
+
+    # Make wall thicker for larger grids (e.g., 17x17)
     if height == 17:
         blocks += [[mid + delta, i] for delta in (-1, 1) for i in range(width)]
-        # Remove blocks on door positions
+        # Remove blocks adjacent to door position
         blocks = [b for b in blocks if b not in ([mid - 1, mid], [mid + 1, mid])]
     return blocks, agent_start, objects
 
@@ -284,32 +319,35 @@ def detour_block(height: int, width: int):
 def two_step(height: int, width: int):
     """Creates a two-step layout with multiple rewards and obstacles."""
     agent_start = [height - 2, width // 2]
-    objects = {
-        "rewards": [
-            Reward([1, 1], 0.5),
-            Reward([1, 3], -1.0),
-            Reward([1, 9], 0.25),
-            Reward([1, 7], 0.25),
-        ],
-        "markers": [],
-        "keys": [],
-        "doors": [],
-        "warps": [],
-        "other": [],
-    }
+
+    # Define specific rewards for this layout
+    objects = get_empty_objects(reward_pos=None)  # No single default reward needed
+    objects["rewards"] = [
+        Reward([1, 1], 0.5),
+        Reward([1, 3], -1.0),
+        Reward([1, 9], 0.25),
+        Reward([1, 7], 0.25),
+    ]
+
     blocks = []
-    # Multiple rows of blocks:
+    # Define vertical wall segments
     for col in (2, 4, 6, 8):
         blocks.extend([[i, col] for i in range(1, height - 1)])
+    # Define partial vertical wall segments
     for col in (1, 7, 3, 9):
         blocks.extend([[i, col] for i in range(4, height - 1)])
+    # Define central wall segment
     blocks.extend([[i, 5] for i in range(1, 6)])
+
+    # Add more walls for wider grids
     if width > 11:
         for col in range(10, 16):
             blocks.extend([[i, col] for i in range(1, height - 1)])
-        agent_start[1] -= 3
+        agent_start[1] -= 3  # Adjust agent start for wider grid
+
+    # Carve out specific passages if grid width allows (width > 7)
     if width > 7:
-        for b in (
+        passage_coords = [
             [4, 2],
             [4, 8],
             [6, 4],
@@ -322,31 +360,33 @@ def two_step(height: int, width: int):
             [5, 8],
             [3, 2],
             [3, 8],
-        ):
-            if b in blocks:
-                blocks.remove(b)
+        ]
+        # Use a set for efficient lookup during removal
+        passage_set = {tuple(p) for p in passage_coords}
+        blocks = [b for b in blocks if tuple(b) not in passage_set]
+
     return blocks, agent_start, objects
 
 
 def narrow(height: int, width: int):
     """Creates a narrow layout with selective rewards and obstacles."""
     agent_start = [height - 2, width // 2]
-    objects = {
-        "rewards": [Reward([1, 5], 1.0), Reward([5, 5], -1.0)],
-        "markers": [],
-        "keys": [],
-        "doors": [],
-        "warps": [],
-        "other": [],
-    }
-    # Use a few fixed rows as obstacles
+
+    # Define specific rewards for this layout
+    objects = get_empty_objects(reward_pos=[1, 5], reward_value=1.0)
+    objects["rewards"].append(Reward([5, 5], -1.0))  # Add a second reward
+
+    # Use a few fixed columns as obstacles
     blocks = []
     for col in (1, 2, 8, 9):
         blocks.extend([[i, col] for i in range(1, height - 1)])
+
+    # Add more walls for wider grids
     if width > 11:
         for col in range(10, 16):
             blocks.extend([[i, col] for i in range(1, height - 1)])
-        agent_start[1] -= 3
+        agent_start[1] -= 3  # Adjust agent start for wider grid
+
     return blocks, agent_start, objects
 
 
@@ -383,19 +423,32 @@ def generate_layout(
         raise ValueError(
             f"Unknown template: {template}. Valid templates are: {list(TEMPLATES.keys())}"
         )
-    blocks, agent_start, objects = TEMPLATES[template](height, width)
-    if add_outer_walls:
-        blocks = add_outer(blocks, height, width)
-    objects["walls"] = [Wall(pos) for pos in blocks]
+
+    # Get layout components from the specified template function
+    inner_blocks, agent_start, objects = TEMPLATES[template](height, width)
+
+    # Combine inner blocks with outer walls if requested
+    all_blocks = (
+        add_outer(inner_blocks, height, width) if add_outer_walls else inner_blocks
+    )
+
+    # Instantiate Wall objects from block coordinates
+    # Ensure 'walls' key exists, even if add_outer_walls is False
+    if "walls" not in objects:
+        objects["walls"] = []
+    objects["walls"].extend([Wall(pos) for pos in all_blocks])
+
     return agent_start, objects
 
 
-def add_outer(blocks: list, height: int, width: int):
-    """Adds an outer border to the blocks."""
+def add_outer(inner_blocks: list, height: int, width: int) -> list:
+    """Adds an outer border to the blocks and returns a new list."""
     outer_blocks = [
         [i, j]
         for i, j in grid_coords(height, width)
         if i == 0 or i == height - 1 or j == 0 or j == width - 1
     ]
-    blocks.extend(outer_blocks)
-    return blocks
+    # Return a new list containing both inner and outer blocks
+    # Use tuples to allow converting to a set for efficient duplicate removal
+    block_set = {tuple(b) for b in inner_blocks} | {tuple(b) for b in outer_blocks}
+    return [list(b) for b in block_set]

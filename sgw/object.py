@@ -1,4 +1,4 @@
-from typing import List, Tuple, Optional, Union, Any
+from typing import List, Tuple, Optional, Any
 
 
 class Object:
