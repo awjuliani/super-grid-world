@@ -22,6 +22,7 @@ class GridSymbolicRenderer(RendererInterface):
         "signs": 12,
         "boxes": 13,
         "pushable_boxes": 14,
+        "reset_buttons": 15,
     }
 
     def __init__(self, grid_shape: Tuple[int, int], window_size: int = None):
@@ -51,16 +52,11 @@ class GridSymbolicRenderer(RendererInterface):
 
         # Set agents' positions
         for i, agent in enumerate(env.agents):
-            if i == agent_idx:
-                grid[agent.pos[0], agent.pos[1], self.OBJECT_CHANNELS["agent"]] = (
-                    agent.looking + 1
-                )  # Store orientation (+1 to avoid 0)
-            else:
-                grid[
-                    agent.pos[0], agent.pos[1], self.OBJECT_CHANNELS["other_agents"]
-                ] = (
-                    i + 1
-                )  # Store agent index (+1 to avoid 0)
+            channel_name = "agent" if i == agent_idx else "other_agents"
+            if channel_name in self.OBJECT_CHANNELS:
+                channel_idx = self.OBJECT_CHANNELS[channel_name]
+                value = agent.looking + 1 if i == agent_idx else i + 1
+                grid[agent.pos[0], agent.pos[1], channel_idx] = value
 
         # Render all object types from the environment
         for obj_type_key, objects in env.objects.items():

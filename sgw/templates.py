@@ -11,6 +11,7 @@ from sgw.object import (
     LinkedDoor,
     PressurePlate,
     Lever,
+    ResetButton,
 )
 
 
@@ -415,6 +416,7 @@ def linked_door_test(height: int, width: int):
     plate_pos = [height - 3, width // 2 - 2]  # Left of start
     reward_pos = [1, width // 2]  # Behind the door
     box_pos = [height - 3, width // 2 - 1]
+    reset_button_pos = [height - 2, width - 2]
 
     # Define a common ID for linking
     door_id = "test_door_1"
@@ -429,6 +431,7 @@ def linked_door_test(height: int, width: int):
         PressurePlate(pos=plate_pos, target_linked_id=door_id)
     ]
     objects["pushable_boxes"] = [PushableBox(box_pos)]
+    objects["reset_buttons"] = [ResetButton(reset_button_pos)]
     # Create a simple wall dividing top and bottom, with the door as passage
     blocks = [[door_pos[0], j] for j in range(width) if j != door_pos[1]]
 

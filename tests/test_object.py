@@ -17,8 +17,10 @@ from sgw.object import (
     LinkedDoor,
     PressurePlate,
     Lever,
+    ResetButton,
 )
 from sgw.enums import Action, ControlType  # Import necessary enums
+import copy
 
 
 # --- Mocks for testing interactions ---
@@ -68,6 +70,7 @@ class MockEnv:
         self.agents = agents if agents is not None else []
         self.rng = np.random.RandomState(rng_seed)
         self._check_target_return = True  # Default behavior for check_target
+        self.initial_objects = None
 
     def set_check_target_return(self, value):
         self._check_target_return = value
@@ -1076,3 +1079,83 @@ def test_lever_interact_no_target():
     assert f"{agent.name} deactivated the {lever.name}" in message
     assert "opened" not in message
     assert "closed" not in message
+
+
+# --- ResetButton Tests ---
+def test_reset_button_initialization():
+    """Test ResetButton initialization."""
+    pos = [9, 9]
+    button = ResetButton(pos)
+    assert button.pos == pos
+    assert button.obstacle is False
+    assert button.consumable is False
+    assert button.terminal is False
+    assert button.name == "reset button"
+
+
+def test_reset_button_copy():
+    """Test ResetButton copy method."""
+    button = ResetButton([9, 9])
+    button_copy = button.copy()
+    assert button is not button_copy
+    assert button.pos == button_copy.pos
+    assert type(button) == type(button_copy)
+    button.pos = [8, 8]
+    assert button_copy.pos == [9, 9]
+
+
+def test_reset_button_interact():
+    """Test ResetButton interaction resets environment objects."""
+    button_pos = [9, 9]
+    agent_pos = button_pos
+    initial_obj_pos = [1, 1]
+    modified_obj_pos = [5, 5]
+
+    # Define initial and modified states
+    initial_objects = {"walls": [Wall(initial_obj_pos)]}
+    modified_objects = {"walls": [Wall(modified_obj_pos)]}
+
+    agent = MockAgent(pos=agent_pos)
+    button = ResetButton(button_pos)
+    env = MockEnv(objects=modified_objects, agents=[agent])
+    # Manually set the initial_objects attribute for the mock env
+    env.initial_objects = copy.deepcopy(initial_objects)
+
+    # Interact with the button
+    message = button.interact(agent, env)
+
+    # Check message
+    assert f"{agent.name} pressed the {button.name}" in message
+    assert "Objects reset to initial state" in message
+
+    # Check if env.objects were reset
+    assert "walls" in env.objects
+    assert len(env.objects["walls"]) == 1
+    assert env.objects["walls"][0].pos == initial_obj_pos
+
+
+def test_reset_button_interact_no_initial_state():
+    """Test ResetButton interaction when env has no initial_objects."""
+    button_pos = [9, 9]
+    agent_pos = button_pos
+    current_obj_pos = [5, 5]
+
+    current_objects = {"walls": [Wall(current_obj_pos)]}
+
+    agent = MockAgent(pos=agent_pos)
+    button = ResetButton(button_pos)
+    env = MockEnv(objects=current_objects, agents=[agent])
+    # Ensure initial_objects is None or not set
+    env.initial_objects = None
+
+    # Interact with the button
+    message = button.interact(agent, env)
+
+    # Check message indicates failure
+    assert f"{agent.name} tried to press the {button.name}" in message
+    assert "initial state was not found" in message
+
+    # Check that objects were NOT reset
+    assert "walls" in env.objects
+    assert len(env.objects["walls"]) == 1
+    assert env.objects["walls"][0].pos == current_obj_pos

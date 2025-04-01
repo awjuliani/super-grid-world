@@ -153,6 +153,12 @@ class SuperGridWorld(Env):
         """
         Resets the environment to its initial configuration.
         """
+        # Store the initial object configuration *before* setting self.objects
+        initial_objects_config = copy.deepcopy(
+            objects if objects is not None else self.template_objects
+        )
+        self.initial_objects = initial_objects_config  # Store for potential reset
+
         # Reset basic state variables
         self._reset_state(
             episode_length,
@@ -160,7 +166,7 @@ class SuperGridWorld(Env):
             stochasticity,
         )
 
-        # Handle objects setup
+        # Handle objects setup using the potentially provided 'objects' or template
         self._setup_objects(objects)
 
         # Set agent positions
@@ -179,13 +185,17 @@ class SuperGridWorld(Env):
         self.time_penalty = time_penalty
         self.max_episode_time = episode_length
         self.stochasticity = stochasticity
-        self.cached_objects = None
+        # self.cached_objects = None # This line seems unused, consider removing if confirmed
         self.events = []  # Initialize empty events list
+        # Reset initial_objects only when reset is explicitly called
+        # self.initial_objects = None # Don't reset here, keep it from the main reset call
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
         """Helper method to set up environment objects."""
+        # Use the initial configuration stored during reset call if objects isn't provided again
+        # Or use the one passed directly to reset if it was provided
         self.objects = copy.deepcopy(
-            objects if objects is not None else self.template_objects
+            objects if objects is not None else self.initial_objects
         )
 
     def _setup_agents(self, agent_positions: list = None, random_start: bool = False):

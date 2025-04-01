@@ -1,4 +1,5 @@
 from typing import List, Tuple, Optional, Any
+import copy
 
 
 class Object:
@@ -590,3 +591,29 @@ class Lever(Object):
             return f"{base_message} {door_message}"
         else:
             return base_message
+
+
+class ResetButton(Object):
+    """A button that resets all objects in the environment to their initial state."""
+
+    def __init__(self, pos: List[int]):
+        super().__init__(pos, obstacle=False, consumable=False, terminal=False)
+        self.name = "reset button"
+
+    def copy(self) -> "ResetButton":
+        return type(self)(list(self.pos))
+
+    def interact(self, agent: Any, env: Any = None) -> Optional[str]:
+        """Resets all objects in the environment to their state at the start of the episode."""
+        super().interact(agent, env)
+
+        if env and hasattr(env, "initial_objects") and env.initial_objects is not None:
+            # Perform a deep copy to avoid modifying the stored initial state
+            env.objects = copy.deepcopy(env.initial_objects)
+            # Note: This does not reset agent positions or states, only objects.
+            return (
+                f"{agent.name} pressed the {self.name}. Objects reset to initial state."
+            )
+        else:
+            # This case should ideally not happen if reset was called correctly
+            return f"{agent.name} tried to press the {self.name}, but the initial state was not found."

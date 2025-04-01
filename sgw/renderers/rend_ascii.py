@@ -18,7 +18,6 @@ class GridASCIIRenderer(RendererInterface):
         "linked_doors": "=",
         "linked_doors_open": "_",
         "pressure_plates": "P",
-        "levers": "L",
         "levers_inactive": "l",
         "levers_active": "L",
         "warps": "W",
@@ -28,6 +27,7 @@ class GridASCIIRenderer(RendererInterface):
         "signs": "S",
         "boxes": "X",
         "pushable_boxes": "C",
+        "reset_buttons": "!",
     }
 
     # Object types and their corresponding grid values
@@ -35,6 +35,10 @@ class GridASCIIRenderer(RendererInterface):
 
     def __init__(self, grid_shape: Tuple[int, int]):
         self.grid_shape = grid_shape
+        # Ensure GRID_VALUES is updated if ASCII_MAP changes after init
+        GridASCIIRenderer.GRID_VALUES = {
+            obj_type: i for i, obj_type in enumerate(GridASCIIRenderer.ASCII_MAP.keys())
+        }
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -53,10 +57,11 @@ class GridASCIIRenderer(RendererInterface):
         )
 
         # Render all object types from the environment
-        # Process objects in a defined order (e.g., static first, then dynamic)
+        # Process objects in a defined order
         render_order = [
             "walls",
             "pressure_plates",  # Floor items
+            "reset_buttons",  # Reset button on floor
             "rewards",
             "keys",
             "doors",
@@ -72,10 +77,18 @@ class GridASCIIRenderer(RendererInterface):
         ]
 
         for obj_type_key in render_order:
-            if obj_type_key in env.objects:
+            if obj_type_key == "reset_buttons":
+                if "reset_buttons" in env.objects:
+                    for button in env.objects["reset_buttons"]:
+                        grid_type = "reset_buttons"
+                        if grid_type in self.GRID_VALUES:
+                            grid[button.pos[0], button.pos[1]] = self.GRID_VALUES[
+                                grid_type
+                            ]
+            elif obj_type_key in env.objects:
                 objects = env.objects[obj_type_key]
                 if not objects:
-                    continue  # Skip if list is empty
+                    continue
 
                 if obj_type_key == "rewards":
                     for reward in objects:
@@ -107,9 +120,8 @@ class GridASCIIRenderer(RendererInterface):
                             grid[lever.pos[0], lever.pos[1]] = self.GRID_VALUES[
                                 grid_type
                             ]
-                elif obj_type_key in self.GRID_VALUES:  # Handle standard types
+                elif obj_type_key in self.GRID_VALUES:
                     for obj in objects:
-                        # Check position bounds
                         if (
                             0 <= obj.pos[0] < self.grid_shape[0]
                             and 0 <= obj.pos[1] < self.grid_shape[1]
@@ -117,19 +129,18 @@ class GridASCIIRenderer(RendererInterface):
                             grid[obj.pos[0], obj.pos[1]] = self.GRID_VALUES[
                                 obj_type_key
                             ]
-                elif obj_type_key == "pressure_plates":  # Use specific key if needed
+                elif obj_type_key == "pressure_plates":
                     grid_type = "pressure_plates"
-                    for plate in objects:
-                        if grid_type in self.GRID_VALUES:
+                    if grid_type in self.GRID_VALUES:
+                        for plate in objects:
                             grid[plate.pos[0], plate.pos[1]] = self.GRID_VALUES[
                                 grid_type
                             ]
-                elif obj_type_key == "pushable_boxes":  # Use specific key
+                elif obj_type_key == "pushable_boxes":
                     grid_type = "pushable_boxes"
-                    for box in objects:
-                        if grid_type in self.GRID_VALUES:
+                    if grid_type in self.GRID_VALUES:
+                        for box in objects:
                             grid[box.pos[0], box.pos[1]] = self.GRID_VALUES[grid_type]
-                # Add other specific handlers if needed
 
         # Set agents' positions last so they appear on top
         for i, agent in enumerate(env.agents):

@@ -233,13 +233,20 @@ class GridLangRenderer(RendererInterface):
             # Format description based on object type and state
             obj_name = obj.name
             state_desc = ""
-            if hasattr(obj, "is_open") and obj_name == "linked door":
-                state_desc = " (open)" if obj.is_open else " (closed)"
-            elif hasattr(obj, "activated") and obj_name == "lever":
-                state_desc = " (activated)" if obj.activated else " (inactive)"
+            if obj_name == "linked door":
+                state_desc = (
+                    " (open)" if getattr(obj, "is_open", False) else " (closed)"
+                )
+            elif obj_name == "lever":
+                state_desc = (
+                    " (activated)"
+                    if getattr(obj, "activated", False)
+                    else " (inactive)"
+                )
             elif obj_name == "pressure plate":
-                # TODO: Check if agent is on the plate to add "(pressed)" state
-                pass  # No state info easily available here yet
+                pass
+            elif obj_name == "reset button":
+                pass
 
             full_name = f"{obj_name}{state_desc}"
 
@@ -366,12 +373,20 @@ class GridLangRenderer(RendererInterface):
             for obj in obj_list:
                 position_desc = self._describe_position_relative_to_north_west(obj.pos)
                 state_desc = ""
-                if hasattr(obj, "is_open") and obj_type == "linked door":
-                    state_desc = " (open)" if obj.is_open else " (closed)"
-                elif hasattr(obj, "activated") and obj_type == "lever":
-                    state_desc = " (activated)" if obj.activated else " (inactive)"
-                elif obj_type == "pressure plate":
-                    # TODO: Check env state for agent presence if needed
+                obj_name = obj.name
+                if obj_name == "linked door":
+                    state_desc = (
+                        " (open)" if getattr(obj, "is_open", False) else " (closed)"
+                    )
+                elif obj_name == "lever":
+                    state_desc = (
+                        " (activated)"
+                        if getattr(obj, "activated", False)
+                        else " (inactive)"
+                    )
+                elif obj_name == "pressure plate":
+                    pass
+                elif obj_name == "reset button":
                     pass
 
                 obj_descriptions.append(f"{position_desc}{state_desc}")
@@ -381,15 +396,11 @@ class GridLangRenderer(RendererInterface):
                 full_name = f"{obj_type}{state_desc}" if state_desc else obj_type
                 descriptions.append(
                     f"There is a {full_name} located {obj_descriptions[0].replace(state_desc, '')}."
-                )  # Avoid duplicate state
-            else:
-                # For multiple objects, list positions (optionally with states)
-                pos_str = ", ".join(obj_descriptions)
-                # Adjust pluralization if needed
-                plural_obj_type = (
-                    obj_type + "s" if not obj_type.endswith("s") else obj_type
                 )
-                # Example: "There are 2 levers located at ... (activated), and at ... (inactive)."
+            else:
+                # Adjust pluralization
+                plural_obj_type = obj_type + ("s" if not obj_type.endswith("s") else "")
+                pos_str = ", ".join(obj_descriptions)
                 descriptions.append(
                     f"There are {len(obj_list)} {plural_obj_type} located {pos_str}."
                 )
@@ -487,11 +498,17 @@ class GridLangRenderer(RendererInterface):
                 else:  # Fallback for existing types if needed
                     obj_type_name = obj_type_key.replace("_", " ").rstrip("s")
 
-                object_counts[obj_type_name] = len(obj_list)
+                # Check if key exists before accessing count
+                if obj_type_name not in object_counts:
+                    object_counts[obj_type_name] = 0
+                object_counts[obj_type_name] += len(
+                    obj_list
+                )  # Ensure count is correct if name != key
 
                 for obj in obj_list:
                     region = self._get_region(obj.pos)
                     if region in region_distribution:
+                        # Use obj_type_name (obj.name) for distribution tracking
                         if obj_type_name not in region_distribution[region]:
                             region_distribution[region].append(obj_type_name)
 

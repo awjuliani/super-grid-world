@@ -17,6 +17,12 @@ from sgw.object import (
     LinkedDoor,
     PressurePlate,
     Lever,
+    Tree,
+    Fruit,
+    Sign,
+    Box,
+    PushableBox,
+    ResetButton,
 )
 from sgw.enums import ControlType
 
@@ -64,6 +70,8 @@ class Grid2DRenderer(RendererInterface):
     LEVER_HANDLE_INACTIVE_FILL = (255, 0, 0)  # Red (inactive)
     LEVER_HANDLE_ACTIVE_FILL = (0, 255, 0)  # Green (active)
     LEVER_HANDLE_BORDER = (50, 50, 50)
+    RESET_BUTTON_FILL = (200, 150, 255)  # Light purple fill
+    RESET_BUTTON_BORDER = (150, 100, 200)  # Darker light purple border
 
     # Dictionary mapping color names to RGB values for agents
     AGENT_COLOR_DICT = {
@@ -122,6 +130,7 @@ class Grid2DRenderer(RendererInterface):
         self.register_renderer("signs", self._render_signs)
         self.register_renderer("boxes", self._render_boxes)
         self.register_renderer("pushable_boxes", self._render_pushable_boxes)
+        self.register_renderer("reset_buttons", self._render_reset_buttons)
 
     @property
     def observation_space(self) -> spaces.Space:
@@ -654,14 +663,58 @@ class Grid2DRenderer(RendererInterface):
                 arrow_width,
             )
 
+    def _render_reset_buttons(
+        self, img: np.ndarray, buttons: List[ResetButton]
+    ) -> None:
+        """Render reset buttons as red circles with an 'R'."""
+        for button in buttons:
+            start, end = self.get_square_edges(button.pos)
+            center_x = (start[0] + end[0]) // 2
+            center_y = (start[1] + end[1]) // 2
+            radius = (
+                end[0] - start[0]
+            ) // 2  # Make it slightly smaller than the square
+
+            # Draw the button circle
+            cv.circle(img, (center_x, center_y), radius, self.RESET_BUTTON_FILL, -1)
+            cv.circle(
+                img,
+                (center_x, center_y),
+                radius,
+                self.RESET_BUTTON_BORDER,
+                self.block_border - 1,
+            )
+
+            # Add the 'R' symbol
+            font = cv.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.5  # Adjust size as needed
+            thickness = 1  # Adjust thickness as needed
+            text = "R"
+            text_color = (255, 255, 255)  # White text
+            (text_width, text_height), _ = cv.getTextSize(
+                text, font, font_scale, thickness
+            )
+            # Center the text within the circle
+            text_pos = (center_x - text_width // 2, center_y + text_height // 2)
+            cv.putText(img, text, text_pos, font, font_scale, text_color, thickness)
+
     def _create_new_frame(self, env: Any) -> np.ndarray:
         img = self._create_base_image()
         self._render_gridlines(img)
 
         # Iterate through registered renderers ensuring new keys are handled
         for key, renderer in self.object_renderers.items():
-            if key in env.objects and env.objects[key]:  # Check if list is not empty
+            # Ensure the key exists and corresponds to a list in env.objects
+            if (
+                key in env.objects
+                and isinstance(env.objects[key], list)
+                and env.objects[key]
+            ):
                 renderer(img, env.objects[key])
+            # Handle potential cases where env.objects might not have the key yet
+            # elif key not in env.objects:
+            #     print(f"Warning: Renderer registered for '{key}', but key not found in env.objects.")
+
         return img
 
     def render_agent(

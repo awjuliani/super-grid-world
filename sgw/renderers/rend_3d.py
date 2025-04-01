@@ -88,12 +88,15 @@ class Grid3DRenderer(RendererInterface):
                 "linked_door": "wood.png",
                 "pressure_plate": "metal.png",
                 "lever": "metal.png",
+                "reset_button": "metal.png",
             }.items()
         }
         if "pressure_plate" not in self.textures:
             self.textures["pressure_plate"] = self.textures.get("wall")
         if "lever" not in self.textures:
             self.textures["lever"] = self.textures.get("wall")
+        if "reset_button" not in self.textures:
+            self.textures["reset_button"] = self.textures.get("wall")
 
     def set_camera(self, agent_pos, agent_dir):
         offsets = [[-1, 0], [0, 1], [1, 0], [0, -1]]
@@ -269,6 +272,17 @@ class Grid3DRenderer(RendererInterface):
             for lever in env.objects["levers"]:
                 self._render_lever(lever.pos[0], lever.pos[1], lever.activated)
 
+        # Render Reset Buttons
+        if "reset_buttons" in env.objects:
+            for button in env.objects["reset_buttons"]:
+                # Render as a red sphere slightly above the floor
+                glPushMatrix()
+                glTranslatef(button.pos[0], -0.3, button.pos[1])  # Position
+                render_sphere(
+                    0, 0, 0, 0.25, texture=None, color=(1.0, 0.0, 0.0)
+                )  # Red sphere
+                glPopMatrix()
+
         glEndList()
         return list_id
 
@@ -440,7 +454,15 @@ class Grid3DRenderer(RendererInterface):
                 glDeleteLists(self.display_lists["scene"], 1)
             glfw.make_context_current(self.window)
             self.display_lists["scene"] = self.create_scene_display_list(env)
-            self.last_objects = copy.deepcopy(env.objects)
+            # Deep copy requires handling potential non-copyable objects if any exist
+            try:
+                self.last_objects = copy.deepcopy(env.objects)
+            except TypeError as e:
+                print(
+                    f"Warning: Could not deepcopy env.objects: {e}. Caching might be incomplete."
+                )
+                # Fallback to shallow copy or handle specific problematic objects
+                self.last_objects = copy.copy(env.objects)
 
         glCallList(self.display_lists["scene"])
 
