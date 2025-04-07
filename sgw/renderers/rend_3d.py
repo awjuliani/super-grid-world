@@ -11,6 +11,8 @@ from sgw.utils.gl_utils import (
     render_sphere,
     render_cylinder,
     render_torus,
+    render_diamond,
+    render_shadow,
 )
 from sgw.renderers.rend_interface import RendererInterface
 from sgw.utils.base_utils import resize_obs
@@ -39,7 +41,7 @@ class Grid3DRenderer(RendererInterface):
         """Return the observation space for visual observations."""
         if self.torch_obs:
             # PyTorch format (channels, height, width)
-            return spaces.Box(0, 1, shape=(3, 64, 64))
+            return spaces.Box(0, 1, shape=(3, self.resolution, self.resolution))
         # Standard format (height, width, channels)
         return spaces.Box(0, 1, shape=(self.resolution, self.resolution, 3))
 
@@ -77,26 +79,22 @@ class Grid3DRenderer(RendererInterface):
                 "wall": "wall.png",
                 "gem": "gem.png",
                 "gem_bad": "gem_bad.png",
-                "wood": "wood.png",
+                "locked_door": "locked_door.png",
                 "key": "key.png",
                 "warp": "warp.png",
                 "tree": "tree.png",
                 "fruit": "fruit.png",
                 "sign": "sign.png",
-                "box": "wood.png",
-                "pushable_box": "wood.png",
-                "linked_door": "wood.png",
+                "box": "crate.png",
+                "pushable_box": "crate.png",
+                "linked_door": "linked_door.png",
                 "pressure_plate": "metal.png",
                 "lever": "metal.png",
                 "reset_button": "metal.png",
+                "shadow": "shadow.png",
+                "wood": "wood.png",
             }.items()
         }
-        if "pressure_plate" not in self.textures:
-            self.textures["pressure_plate"] = self.textures.get("wall")
-        if "lever" not in self.textures:
-            self.textures["lever"] = self.textures.get("wall")
-        if "reset_button" not in self.textures:
-            self.textures["reset_button"] = self.textures.get("wall")
 
     def set_camera(self, agent_pos, agent_dir):
         offsets = [[-1, 0], [0, 1], [1, 0], [0, -1]]
@@ -111,7 +109,20 @@ class Grid3DRenderer(RendererInterface):
         list_id = glGenLists(1)
         glNewList(list_id, GL_COMPILE)
 
-        # Render walls
+        shadow_tex = self.textures.get("shadow")
+
+        # Render perimeter walls
+        wall_texture = self.textures["wall"]
+        # Top and bottom walls (including corners)
+        for x in range(-1, env.grid_width + 1):
+            render_cube(x, 0.0, -1, wall_texture)  # Top row
+            render_cube(x, 0.0, env.grid_height, wall_texture)  # Bottom row
+        # Left and right walls (excluding corners already rendered)
+        for z in range(env.grid_height):
+            render_cube(-1, 0.0, z, wall_texture)  # Left column
+            render_cube(env.grid_width, 0.0, z, wall_texture)  # Right column
+
+        # Render internal walls specified in the environment
         if "walls" in env.objects:
             for wall in env.objects["walls"]:
                 render_cube(wall.pos[0], 0.0, wall.pos[1], self.textures["wall"])
@@ -125,18 +136,21 @@ class Grid3DRenderer(RendererInterface):
                 texture = (
                     self.textures["gem"] if reward_val > 0 else self.textures["gem_bad"]
                 )
-                render_sphere(
-                    reward.pos[0], -0.25, reward.pos[1], 0.25, texture=texture
-                )
+                if shadow_tex:
+                    render_shadow(reward.pos[0], reward.pos[1], 0.3, shadow_tex)
+                render_diamond(reward.pos[0], 0.0, reward.pos[1], 0.4, texture=texture)
 
         # Render doors
         if "doors" in env.objects:
             for door in env.objects["doors"]:
-                render_cube(door.pos[0], 0.0, door.pos[1], self.textures["wood"])
+                render_cube(door.pos[0], 0.0, door.pos[1], self.textures["locked_door"])
 
         # Render keys
         if "keys" in env.objects:
             for key in env.objects["keys"]:
+                if shadow_tex:
+                    render_shadow(key.pos[0], key.pos[1], 0.25, shadow_tex)
+
                 # Calculate key dimensions
                 handle_outer_radius = 0.15
                 handle_inner_radius = 0.05
@@ -205,11 +219,15 @@ class Grid3DRenderer(RendererInterface):
         # Render trees
         if "trees" in env.objects:
             for tree in env.objects["trees"]:
+                if shadow_tex:
+                    render_shadow(tree.pos[0], tree.pos[1], 0.5, shadow_tex)
                 self._render_tree(tree.pos[0], tree.pos[1])
 
         # Render fruits
         if "fruits" in env.objects:
             for fruit in env.objects["fruits"]:
+                if shadow_tex:
+                    render_shadow(fruit.pos[0], fruit.pos[1], 0.2, shadow_tex)
                 render_sphere(
                     fruit.pos[0],
                     -0.3,
@@ -221,6 +239,8 @@ class Grid3DRenderer(RendererInterface):
         # Render signs
         if "signs" in env.objects:
             for sign in env.objects["signs"]:
+                if shadow_tex:
+                    render_shadow(sign.pos[0], sign.pos[1], 0.3, shadow_tex)
                 self._render_sign(sign.pos[0], sign.pos[1])
 
         # Render boxes
@@ -228,14 +248,23 @@ class Grid3DRenderer(RendererInterface):
             for box in env.objects["boxes"]:
                 # Skip pushable boxes - they'll be rendered separately
                 if box.__class__.__name__ != "PushableBox":
+                    if shadow_tex:
+                        render_shadow(box.pos[0], box.pos[1], 0.4, shadow_tex)
                     self._render_box(box.pos[0], box.pos[1])
-                else:
-                    self._render_pushable_box(box.pos[0], box.pos[1])
 
         # Render pushable boxes
-        if "pushable_boxes" in env.objects:
-            for box in env.objects["pushable_boxes"]:
-                self._render_pushable_box(box.pos[0], box.pos[1])
+        pushable_boxes_list = env.objects.get("pushable_boxes", []) + [
+            b
+            for b in env.objects.get("boxes", [])
+            if b.__class__.__name__ == "PushableBox"
+        ]
+        # Remove duplicates if necessary (e.g., if they can appear in both lists)
+        # unique_pushable_boxes = list({id(obj): obj for obj in pushable_boxes_list}.values()) # If needed
+
+        for box in pushable_boxes_list:
+            if shadow_tex:
+                render_shadow(box.pos[0], box.pos[1], 0.4, shadow_tex)
+            self._render_pushable_box(box.pos[0], box.pos[1])
 
         # Render other agents (excluding current agent)
         current_agent = (
@@ -245,6 +274,8 @@ class Grid3DRenderer(RendererInterface):
         )
         for i, agent in enumerate(env.agents):
             if agent is not None and agent != current_agent:
+                if shadow_tex:
+                    render_shadow(agent.pos[0], agent.pos[1], 0.4, shadow_tex)
                 render_cube(
                     agent.pos[0], -0.5, agent.pos[1], None, color=(0.5, 0.5, 0.5)
                 )
@@ -270,17 +301,36 @@ class Grid3DRenderer(RendererInterface):
         # Render Levers
         if "levers" in env.objects:
             for lever in env.objects["levers"]:
+                if shadow_tex:
+                    render_shadow(
+                        lever.pos[0], lever.pos[1], 0.15, shadow_tex, intensity=0.4
+                    )
                 self._render_lever(lever.pos[0], lever.pos[1], lever.activated)
 
         # Render Reset Buttons
         if "reset_buttons" in env.objects:
             for button in env.objects["reset_buttons"]:
-                # Render as a red sphere slightly above the floor
+                # Render the base plate (similar to pressure plate)
                 glPushMatrix()
-                glTranslatef(button.pos[0], -0.3, button.pos[1])  # Position
-                render_sphere(
-                    0, 0, 0, 0.25, texture=None, color=(1.0, 0.0, 0.0)
-                )  # Red sphere
+                glTranslatef(
+                    button.pos[0], -0.48, button.pos[1]
+                )  # Slightly above floor
+                glScalef(0.8, 0.04, 0.8)  # Flat and square base
+                render_cube(
+                    0, 0, 0, self.textures["reset_button"]
+                )  # Use reset_button texture (metal)
+                glPopMatrix()
+
+                # Render the inner purple button part
+                purple_color = (0.5, 0.0, 0.5)
+                glPushMatrix()
+                glTranslatef(
+                    button.pos[0], -0.45, button.pos[1]
+                )  # Slightly higher than the base
+                glScalef(0.6, 0.03, 0.6)  # Smaller and slightly shallower than base
+                render_cube(
+                    0, 0, 0, texture=None, color=purple_color
+                )  # Render with purple color
                 glPopMatrix()
 
         glEndList()
@@ -311,7 +361,7 @@ class Grid3DRenderer(RendererInterface):
         glPushMatrix()
         glTranslatef(x, -0.5, z)  # Start at ground level
         glScalef(0.1, 0.8, 0.1)
-        render_cube(0, 0.5, 0, self.textures["wood"])
+        render_cube(0, 0.5, 0, self.textures.get("wood"))
         glPopMatrix()
 
         # Render board
@@ -348,41 +398,9 @@ class Grid3DRenderer(RendererInterface):
         """Render a pushable box as a simple cube with directional arrows."""
         # Render main box (simpler than a chest - just a cube)
         glPushMatrix()
-        glTranslatef(x, -0.25, z)  # Slightly raised from ground
-        glScalef(0.8, 0.6, 0.8)  # Slightly taller than a regular box
+        glTranslatef(x, -0.15, z)  # Slightly lower from ground
+        glScalef(0.7, 0.7, 0.7)  # Slightly smaller than a regular box
         render_cube(0, 0, 0, self.textures["pushable_box"])
-        glPopMatrix()
-
-        # Render directional arrows on each side
-        arrow_size = 0.2
-        arrow_height = 0.1
-
-        # North arrow
-        glPushMatrix()
-        glTranslatef(x, -0.1, z - 0.4)  # North side
-        glRotatef(90, 1, 0, 0)  # Rotate to face north
-        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
-        glPopMatrix()
-
-        # South arrow
-        glPushMatrix()
-        glTranslatef(x, -0.1, z + 0.4)  # South side
-        glRotatef(-90, 1, 0, 0)  # Rotate to face south
-        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
-        glPopMatrix()
-
-        # East arrow
-        glPushMatrix()
-        glTranslatef(x + 0.4, -0.1, z)  # East side
-        glRotatef(90, 0, 0, 1)  # Rotate to face east
-        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
-        glPopMatrix()
-
-        # West arrow
-        glPushMatrix()
-        glTranslatef(x - 0.4, -0.1, z)  # West side
-        glRotatef(-90, 0, 0, 1)  # Rotate to face west
-        render_cylinder(0, 0, 0, 0.05, arrow_size, texture=None, color=(0.3, 0.3, 0.3))
         glPopMatrix()
 
     def _render_lever(self, x, z, activated):
@@ -424,30 +442,49 @@ class Grid3DRenderer(RendererInterface):
         if "scene" not in self.display_lists or self.last_objects is None:
             should_regenerate_list = True
         else:
-            try:
-                if any(
-                    len(env.objects.get(k, [])) != len(self.last_objects.get(k, []))
-                    for k in set(env.objects) | set(self.last_objects)
-                ):
-                    should_regenerate_list = True
-                else:
-                    for k in env.objects:
-                        if k == "linked_doors":
-                            if any(
-                                o1.is_open != o2.is_open
-                                for o1, o2 in zip(env.objects[k], self.last_objects[k])
-                            ):
-                                should_regenerate_list = True
-                                break
-                        elif k == "levers":
-                            if any(
-                                o1.activated != o2.activated
-                                for o1, o2 in zip(env.objects[k], self.last_objects[k])
-                            ):
-                                should_regenerate_list = True
-                                break
-            except Exception:
+            # Check 1: Compare object types present
+            current_keys = set(env.objects.keys())
+            last_keys = set(self.last_objects.keys())
+            if current_keys != last_keys:
                 should_regenerate_list = True
+            else:
+                # Check 2: Compare counts and states/positions for each type
+                position_or_state_changed = False
+                for k in current_keys:
+                    current_obj_list = env.objects[k]
+                    last_obj_list = self.last_objects[k]
+
+                    if len(current_obj_list) != len(last_obj_list):
+                        position_or_state_changed = True
+                        break
+
+                    # Compare individual objects
+                    for obj_current, obj_last in zip(current_obj_list, last_obj_list):
+                        # Always check position
+                        if obj_current.pos != obj_last.pos:
+                            position_or_state_changed = True
+                            break
+
+                        # Check specific state for relevant types
+                        if hasattr(obj_current, "is_open") and hasattr(
+                            obj_last, "is_open"
+                        ):
+                            if obj_current.is_open != obj_last.is_open:
+                                position_or_state_changed = True
+                                break
+                        if hasattr(obj_current, "activated") and hasattr(
+                            obj_last, "activated"
+                        ):
+                            if obj_current.activated != obj_last.activated:
+                                position_or_state_changed = True
+                                break
+                        # Add checks for other stateful objects if needed
+
+                    if position_or_state_changed:
+                        break  # Exit the loop over object types
+
+                if position_or_state_changed:
+                    should_regenerate_list = True
 
         if should_regenerate_list:
             if "scene" in self.display_lists:
@@ -464,9 +501,7 @@ class Grid3DRenderer(RendererInterface):
                 # Fallback to shallow copy or handle specific problematic objects
                 self.last_objects = copy.copy(env.objects)
 
-        glCallList(self.display_lists["scene"])
-
-        # Render floor
+        # === Render floor FIRST ===
         render_plane(
             env.grid_width / 2 - 0.5,
             -0.5,
@@ -475,14 +510,19 @@ class Grid3DRenderer(RendererInterface):
             self.textures["floor"],
             repeat=max(env.grid_width, env.grid_height) / 4,
         )
+        # === End Render floor ===
+
+        # === Render scene objects and shadows (using display list) ===
+        if "scene" in self.display_lists:  # Ensure list exists before calling
+            glCallList(self.display_lists["scene"])
+        # === End Render scene ===
 
         # Read pixels
         buffer = glReadPixels(0, 0, self.width, self.height, GL_RGB, GL_UNSIGNED_BYTE)
         image = np.frombuffer(buffer, dtype=np.uint8).reshape(
             self.height, self.width, 3
         )
-        image = np.flip(image, axis=0)
-        image = np.flip(image, axis=1)
+        image = np.flip(image, axis=(0, 1))
         return resize_obs(image, self.resolution, self.torch_obs)
 
     def render(self, env, agent_idx=0, is_state_view=False):

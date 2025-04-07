@@ -12,6 +12,7 @@ from sgw.agent import Agent
 import matplotlib.pyplot as plt
 import copy
 from sgw.enums import ObsType, ControlType, Action
+from sgw.object import Wall
 
 
 class SuperGridWorld(Env):
@@ -30,7 +31,7 @@ class SuperGridWorld(Env):
         manual_interact: bool = False,
         torch_obs: bool = False,
         resolution: int = 256,
-        add_outer_walls: bool = True,
+        add_outer_walls: bool = False,
         field_of_view: int = None,
         num_agents: int = 1,
         agent_names: list = ["agent"],
@@ -75,7 +76,7 @@ class SuperGridWorld(Env):
     def _init_grid(self, template, grid_shape):
         # grid_shape is (height, width)
         self.agent_start_pos, self.template_objects = generate_layout(
-            template, grid_shape[0], grid_shape[1], self.add_outer_walls
+            template, grid_shape[0], grid_shape[1]
         )
         self.grid_shape = grid_shape
 
@@ -191,12 +192,36 @@ class SuperGridWorld(Env):
         # self.initial_objects = None # Don't reset here, keep it from the main reset call
 
     def _setup_objects(self, objects: Dict = None) -> Dict:
-        """Helper method to set up environment objects."""
+        """Helper method to set up environment objects, including outer walls."""
         # Use the initial configuration stored during reset call if objects isn't provided again
         # Or use the one passed directly to reset if it was provided
         self.objects = copy.deepcopy(
             objects if objects is not None else self.initial_objects
         )
+
+        # Ensure 'walls' key exists before potentially adding outer walls
+        if "walls" not in self.objects:
+            self.objects["walls"] = []
+
+        # Add outer walls if the flag is set
+        if self.add_outer_walls:
+            height, width = self.grid_shape
+            outer_wall_coords = [
+                [i, j]
+                for i in range(height)
+                for j in range(width)
+                if i == 0 or i == height - 1 or j == 0 or j == width - 1
+            ]
+
+            # Get positions of existing walls to avoid duplicates
+            existing_wall_positions = {
+                tuple(wall.pos) for wall in self.objects["walls"]
+            }
+
+            # Add new Wall objects for outer coordinates not already occupied
+            for pos in outer_wall_coords:
+                if tuple(pos) not in existing_wall_positions:
+                    self.objects["walls"].append(Wall(pos))
 
     def _setup_agents(self, agent_positions: list = None, random_start: bool = False):
         """Helper method to determine the agents' starting positions."""

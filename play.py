@@ -44,16 +44,16 @@ def play_game():
     parser.add_argument(
         "--obs_type",
         type=str,
-        default="visual_2d",
+        default="visual_3d",
         choices=["visual_2d", "visual_3d"],
-        help="Observation type (default: visual_2d)",
+        help="Observation type (default: visual_3d)",
     )
     parser.add_argument(
         "--control",
         type=str,
-        default="allocentric",
+        default="egocentric",
         choices=["allocentric", "egocentric"],
-        help="Control type (default: allocentric)",
+        help="Control type (default: egocentric)",
     )
     parser.add_argument(
         "--manual_interact",

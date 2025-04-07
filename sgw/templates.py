@@ -465,7 +465,6 @@ def generate_layout(
     template: str = "empty",
     height: int = 11,
     width: int = 11,
-    add_outer_walls: bool = True,
 ):
     """Generates the maze layout based on template and grid dimensions."""
     if template not in TEMPLATES:
@@ -474,30 +473,14 @@ def generate_layout(
         )
 
     # Get layout components from the specified template function
-    inner_blocks, agent_start, objects = TEMPLATES[template](height, width)
+    template_blocks, agent_start, objects = TEMPLATES[template](height, width)
 
-    # Combine inner blocks with outer walls if requested
-    all_blocks = (
-        add_outer(inner_blocks, height, width) if add_outer_walls else inner_blocks
-    )
-
-    # Instantiate Wall objects from block coordinates
-    # Ensure 'walls' key exists, even if add_outer_walls is False
+    # Ensure 'walls' key exists in the objects dictionary
     if "walls" not in objects:
         objects["walls"] = []
-    objects["walls"].extend([Wall(pos) for pos in all_blocks])
+
+    # Instantiate Wall objects ONLY from the template's block coordinates
+    # Outer walls will be handled by the environment class if requested
+    objects["walls"].extend([Wall(pos) for pos in template_blocks])
 
     return agent_start, objects
-
-
-def add_outer(inner_blocks: list, height: int, width: int) -> list:
-    """Adds an outer border to the blocks and returns a new list."""
-    outer_blocks = [
-        [i, j]
-        for i, j in grid_coords(height, width)
-        if i == 0 or i == height - 1 or j == 0 or j == width - 1
-    ]
-    # Return a new list containing both inner and outer blocks
-    # Use tuples to allow converting to a set for efficient duplicate removal
-    block_set = {tuple(b) for b in inner_blocks} | {tuple(b) for b in outer_blocks}
-    return [list(b) for b in block_set]
