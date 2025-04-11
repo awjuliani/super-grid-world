@@ -95,7 +95,7 @@ Events and rewards will be printed to the terminal.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details (Note: LICENSE file might need to be added).
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE.md) file for details.
 
 ## Author
 
