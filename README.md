@@ -1,8 +1,10 @@
 # Super Grid World
 
+![Super Grid World Banner](banner.png)
+
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-Super Grid World is a flexible and customizable grid world environment implemented in Python. It's designed for research, particularly in reinforcement learning, offering various configurations for observation types, control schemes, and environment layouts.
+Super Grid World is a flexible and customizable grid world environment implemented in Python. It's designed for research, particularly in reinforcement learning, offering various configurations for observation types, control schemes, and environment layouts. It is a heavily-modified fork of the GridEnv present in the [Neuro-Nav library](https://github.com/awjuliani/Neuro-Nav).
 
 ## Installation
 
