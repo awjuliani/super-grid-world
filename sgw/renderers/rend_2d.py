@@ -9,7 +9,6 @@ from sgw.utils.base_utils import resize_obs
 from sgw.object import (
     Wall,
     Reward,
-    Marker,
     Key,
     Door,
     Warp,
@@ -23,6 +22,7 @@ from sgw.object import (
     Box,
     PushableBox,
     ResetButton,
+    Marker,
 )
 from sgw.enums import ControlType
 
@@ -200,18 +200,74 @@ class Grid2DRenderer(RendererInterface):
         self, img: np.ndarray, pos: Tuple[int, int], factor: float, reward_value: float
     ) -> None:
         fill_color, border_color = self._get_reward_colors(reward_value)
-        start, end = self.get_square_edges(pos)
-        size_reduction = int(2 * factor)
-        adjusted_start = (start[0] + size_reduction, start[1] + size_reduction)
-        adjusted_end = (end[0] - size_reduction, end[1] - size_reduction)
-        cv.rectangle(img, adjusted_start, adjusted_end, fill_color, -1)
-        cv.rectangle(
-            img, adjusted_start, adjusted_end, border_color, self.block_border - 1
+        start_coord, end_coord = self.get_square_edges(
+            pos
+        )  # Use these for centering calculation
+
+        # Calculate center and dimensions for the gem
+        center_x = (start_coord[0] + end_coord[0]) // 2
+        center_y = (start_coord[1] + end_coord[1]) // 2
+        # Ensure width and height are integers for coordinate calculations
+        width = int((end_coord[0] - start_coord[0]) * 0.8)  # Cast to int
+        height = int((end_coord[1] - start_coord[1]) * 0.8)  # Cast to int
+        half_width = width // 2  # Now guaranteed to be int
+        half_height = height // 2  # Now guaranteed to be int
+
+        # Define the vertices of the gem polygon (octagon shape)
+        # Order: Top, Top-Right, Mid-Right, Bottom-Right, Bottom, Bottom-Left, Mid-Left, Top-Left
+        pts = np.array(
+            [
+                [center_x, center_y - half_height],  # Top point
+                [
+                    center_x + half_width // 2,
+                    center_y - half_height // 2,
+                ],  # Top-Right facet point
+                [center_x + half_width, center_y],  # Mid-Right point (widest)
+                [
+                    center_x + half_width // 2,
+                    center_y + half_height // 2,
+                ],  # Bottom-Right facet point
+                [center_x, center_y + half_height],  # Bottom point
+                [
+                    center_x - half_width // 2,
+                    center_y + half_height // 2,
+                ],  # Bottom-Left facet point
+                [center_x - half_width, center_y],  # Mid-Left point (widest)
+                [
+                    center_x - half_width // 2,
+                    center_y - half_height // 2,
+                ],  # Top-Left facet point
+            ],
+            np.int32,
         )
+        pts = pts.reshape((-1, 1, 2))  # Reshape for OpenCV polygon functions
+
+        # Draw the filled gem polygon
+        cv.fillPoly(img, [pts], fill_color)
+
+        # Draw the gem border
+        cv.polylines(
+            img,
+            [pts],
+            isClosed=True,
+            color=border_color,
+            thickness=self.block_border - 1,
+        )
+
+        # Optional: Add a simple shine/facet line for visual flair
+        # Ensure coordinates are integers before creating tuples
+        shine_start = (center_x - half_width // 2, center_y - half_height // 2)
+        shine_end = (center_x + half_width // 4, center_y - half_height // 4)
+        shine_color = tuple(
+            min(c + 50, 255) for c in fill_color
+        )  # Slightly lighter fill color
+        cv.line(img, shine_start, shine_end, shine_color, 1)
 
     def _process_reward(self, reward: Any) -> Tuple[bool, float, float]:
         if isinstance(reward, list):
             draw = reward[1]
+            # Factor might not be directly applicable to polygon size in the same way
+            # We'll pass it but _draw_reward currently calculates size based on block_size
             factor = 1 if reward[2] else 1.5
             reward_value = reward[0]
         else:
@@ -311,20 +367,58 @@ class Grid2DRenderer(RendererInterface):
         # Standard doors (key operated)
         for door in doors:
             start, end = self.get_square_edges(door.pos)
-            # Apply orientation adjustments if needed, similar to linked doors below
-            # For simplicity, current standard doors might just fill the square
-            # Let's assume they fill the square for now unless specific logic was intended
-            fill = (
-                self.DOOR_FILL if door.obstacle else self.BACKGROUND_COLOR
-            )  # Open if not obstacle
-            border = self.DOOR_BORDER if door.obstacle else self.GRID_LINE_COLOR
-            cv.rectangle(img, start, end, fill, -1)
-            cv.rectangle(img, start, end, border, self.block_border - 1)
+            center_x = (start[0] + end[0]) // 2
+            center_y = (start[1] + end[1]) // 2
+
+            if door.obstacle:  # Door is locked/closed
+                fill_color = self.DOOR_FILL
+                border_color = self.DOOR_BORDER
+                # Draw the closed door square
+                cv.rectangle(img, start, end, fill_color, -1)
+                cv.rectangle(img, start, end, border_color, self.block_border - 1)
+
+                # Draw keyhole symbol
+                keyhole_radius = self.block_size // 12
+                keyhole_stem_height = self.block_size // 6
+                keyhole_stem_width = self.block_size // 16
+
+                # Keyhole top circle
+                cv.circle(
+                    img,
+                    (center_x, center_y - keyhole_stem_height // 4),
+                    keyhole_radius,
+                    self.DOOR_BORDER,
+                    -1,
+                )
+                # Keyhole bottom stem (rectangle)
+                stem_start_x = center_x - keyhole_stem_width // 2
+                stem_end_x = center_x + keyhole_stem_width // 2
+                stem_start_y = center_y - keyhole_stem_height // 4 + keyhole_radius // 2
+                stem_end_y = stem_start_y + keyhole_stem_height
+                cv.rectangle(
+                    img,
+                    (stem_start_x, stem_start_y),
+                    (stem_end_x, stem_end_y),
+                    self.DOOR_BORDER,
+                    -1,
+                )
+
+            else:  # Door is unlocked/open
+                fill_color = self.BACKGROUND_COLOR
+                border_color = self.GRID_LINE_COLOR
+                # Draw as open passage (background color)
+                cv.rectangle(img, start, end, fill_color, -1)
+                # Optional: Draw a faint frame to show where the door was
+                frame_thickness = 1
+                cv.rectangle(img, start, end, self.DOOR_BORDER, frame_thickness)
 
     def _render_linked_doors(self, img: np.ndarray, doors: List[LinkedDoor]) -> None:
         # Linked doors (plate/lever operated)
         for door in doors:
             start, end = self.get_square_edges(door.pos)
+            center_x = (start[0] + end[0]) // 2
+            center_y = (start[1] + end[1]) // 2
+
             if door.is_open:
                 fill_color = self.LINKED_DOOR_OPEN_FILL
                 border_color = self.LINKED_DOOR_OPEN_BORDER
@@ -338,26 +432,22 @@ class Grid2DRenderer(RendererInterface):
             else:  # Door is closed
                 fill_color = self.LINKED_DOOR_CLOSED_FILL
                 border_color = self.LINKED_DOOR_CLOSED_BORDER
-                # Draw closed door, potentially adjusting for orientation
-                if door.orientation == "h":
-                    # Make horizontal doors look like a bar
-                    h_start = (start[0], start[1] + self.block_size // 4)
-                    h_end = (end[0], end[1] - self.block_size // 4)
-                    cv.rectangle(img, h_start, h_end, fill_color, -1)
-                    cv.rectangle(
-                        img, h_start, h_end, border_color, self.block_border - 1
-                    )
-                elif door.orientation == "v":
-                    # Make vertical doors look like a bar
-                    v_start = (start[0] + self.block_size // 4, start[1])
-                    v_end = (end[0] - self.block_size // 4, end[1])
-                    cv.rectangle(img, v_start, v_end, fill_color, -1)
-                    cv.rectangle(
-                        img, v_start, v_end, border_color, self.block_border - 1
-                    )
-                else:  # Default to full block if no orientation
-                    cv.rectangle(img, start, end, fill_color, -1)
-                    cv.rectangle(img, start, end, border_color, self.block_border - 1)
+                # Draw closed door as full block
+                cv.rectangle(img, start, end, fill_color, -1)
+                cv.rectangle(img, start, end, border_color, self.block_border - 1)
+
+                # Add the '!' symbol
+                font = cv.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.6  # Adjust size as needed
+                thickness = 2  # Adjust thickness as needed
+                text = "!"
+                text_color = (255, 255, 255)  # White text for contrast
+                (text_width, text_height), _ = cv.getTextSize(
+                    text, font, font_scale, thickness
+                )
+                # Center the text within the door square
+                text_pos = (center_x - text_width // 2, center_y + text_height // 2)
+                cv.putText(img, text, text_pos, font, font_scale, text_color, thickness)
 
     def _render_pressure_plates(
         self, img: np.ndarray, plates: List[PressurePlate]

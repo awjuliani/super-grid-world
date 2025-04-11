@@ -116,13 +116,12 @@ class Key(Object):
 class Door(Object):
     """A door that can be unlocked with a key."""
 
-    def __init__(self, pos: List[int], orientation: Any):
+    def __init__(self, pos: List[int]):
         super().__init__(pos, obstacle=True, consumable=True)
-        self.orientation = orientation
         self.name = "locked door"
 
     def copy(self) -> "Door":
-        return type(self)(list(self.pos), self.orientation)
+        return type(self)(list(self.pos))
 
     def try_unlock(self, agent: Any) -> Tuple[bool, Optional[str]]:
         """
@@ -402,15 +401,14 @@ class PushableBox(Object):
 class LinkedDoor(Object):
     """A door that is linked to and activated by other objects like levers or plates."""
 
-    def __init__(self, pos: List[int], linked_id: Any, orientation: Any = None):
+    def __init__(self, pos: List[int], linked_id: Any):
         super().__init__(pos, obstacle=True, consumable=False, terminal=False)
         self.linked_id = linked_id
-        self.orientation = orientation  # Optional, for visual rendering
         self.name = "linked door"
         self.is_open = False
 
     def copy(self) -> "LinkedDoor":
-        new_door = type(self)(list(self.pos), self.linked_id, self.orientation)
+        new_door = type(self)(list(self.pos), self.linked_id)
         new_door.obstacle = self.obstacle
         new_door.is_open = self.is_open
         return new_door

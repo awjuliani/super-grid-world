@@ -109,7 +109,7 @@ def four_rooms_split(height: int, width: int):
     # Define specific objects for this layout
     objects = get_empty_objects(reward_pos=[earl_mid_h, earl_mid_w], reward_value=1.0)
     objects["keys"] = [Key([earl_mid_h, late_mid_w])]
-    objects["doors"] = [Door([earl_mid_h, mid_w], "v")]
+    objects["doors"] = [Door([earl_mid_h, mid_w])]
     objects["warps"] = [Warp([late_mid_h, earl_mid_w], [earl_mid_h + 1, late_mid_w])]
 
     # Build walls (three rows thick horizontal wall)
@@ -175,7 +175,7 @@ def two_rooms(height: int, width: int):
     # Define specific objects for this layout
     objects = get_empty_objects(reward_pos=[1, mid], reward_value=1.0)
     objects["keys"] = [Key([mid + half_mid, mid - half_mid])]
-    objects["doors"] = [Door([mid, mid], "h")]
+    objects["doors"] = [Door([mid, mid])]
     objects["pushable_boxes"] = [PushableBox([mid - half_mid, mid + half_mid])]
 
     # Define wall line
@@ -424,9 +424,7 @@ def linked_door_test(height: int, width: int):
     # Create the objects dictionary
     objects = get_empty_objects(reward_pos=None)  # Start fresh, no default reward
     objects["rewards"] = [Reward(reward_pos, DEFAULT_REWARD_VALUE)]
-    objects["linked_doors"] = [
-        LinkedDoor(pos=door_pos, linked_id=door_id, orientation="h")
-    ]
+    objects["linked_doors"] = [LinkedDoor(pos=door_pos, linked_id=door_id)]
     objects["pressure_plates"] = [
         PressurePlate(pos=plate_pos, target_linked_id=door_id)
     ]
