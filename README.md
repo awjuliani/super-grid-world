@@ -97,6 +97,17 @@ Events and rewards will be printed to the terminal.
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE.md) file for details.
 
-## Author
+## Citing
 
-*   **Arthur Juliani** - [awjuliani@gmail.com](mailto:awjuliani@gmail.com) - [GitHub](https://github.com/awjuliani)
+If you use Super Grid World in your research or educational material, please cite the work as follows:
+
+```
+@inproceedings{neuronav2022,
+  Author = {Juliani, Arthur and Barnett, Samuel and Davis, Brandon and Sereno, Margaret and Momennejad, Ida},
+  Title = {Neuro-Nav: A Library for Neurally-Plausible Reinforcement Learning},
+  Year = {2022},
+  BookTitle = {The 5th Multidisciplinary Conference on Reinforcement Learning and Decision Making},
+}
+```
+
+The research paper corresponding to the above citation can be found [here](https://arxiv.org/abs/2206.03312).
